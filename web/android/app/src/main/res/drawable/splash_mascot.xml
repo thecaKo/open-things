@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Open Things mascot, first frame of the web splash (web/src/ui/Splash.tsx).
+     Android 12 shows the splash icon in a 288dp box, so the canvas is 288dp and
+     the mascot 120dp: exactly the size the web splash draws it (measured on device),
+     so the hand-over is seamless. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <group android:translateX="84" android:translateY="84">
+        <!-- body: rounded square, x=8 y=8 w=104 h=104 rx=34 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M42,8 L78,8 A34,34 0 0 1 112,42 L112,78 A34,34 0 0 1 78,112 L42,112 A34,34 0 0 1 8,78 L8,42 A34,34 0 0 1 42,8 Z" />
+        <!-- eyes: ellipses rx=6.5 ry=10 at (44,50) and (76,50) -->
+        <path
+            android:fillColor="#141416"
+            android:pathData="M37.5,50 A6.5,10 0 1 0 50.5,50 A6.5,10 0 1 0 37.5,50 Z" />
+        <path
+            android:fillColor="#141416"
+            android:pathData="M69.5,50 A6.5,10 0 1 0 82.5,50 A6.5,10 0 1 0 69.5,50 Z" />
+    </group>
+</vector>

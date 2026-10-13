@@ -7,8 +7,10 @@ android {
         applicationId "app.openthings"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // New native version on every build: the OTA updater discards downloaded web
+        // bundles when the native version changes, so a fresh APK runs its own code.
+        versionCode((int) (System.currentTimeMillis() / 60000L))
+        versionName "1.0." + ((int) (System.currentTimeMillis() / 60000L))
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match .splash background in web/src/styles.css so the native splash
+         hands over to the animated web splash without a visible cut. -->
+    <color name="splash_bg">#141416</color>
+</resources>

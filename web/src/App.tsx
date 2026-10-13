@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, createTask, createArea, type Task } from './db';
 import { getConfig } from './sync';
 import { todayStr } from './dates';
 import { isNative, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
+import { SplashScreen } from '@capacitor/splash-screen';
 import { runRepeats } from './repeat';
 import { buildCtx, listOf, subscribeLinger, getLingerVersion, type View } from './model';
 import { useBack } from './ui/back';
 import { useWide } from './ui/hooks';
+import { Splash } from './ui/Splash';
 import { Navigator } from './ui/nav';
 import { ListScreen } from './ui/screen';
 import { SettingsSheet } from './ui/settings';
@@ -31,7 +33,28 @@ const slide = {
   exit: (dir: number) => ({ x: dir > 0 ? '-25%' : '100%', opacity: dir > 0 ? 0.6 : 1 }),
 };
 
-export default function App() {
+/** Root: the app plus the launch animation on top (kept outside App so it never remounts). */
+export default function Root() {
+  // Phones only; skipped on wide screens and with reduced motion.
+  const [splash, setSplash] = useState(
+    () => !window.matchMedia('(min-width: 760px)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const endSplash = useCallback(() => setSplash(false), []);
+  // Drop the native splash once our first frame (identical mascot, or the app) is painted.
+  useEffect(() => {
+    if (!isNative) return;
+    // Two frames + a short margin: rAF can fire before the WebView frame is on screen.
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => void SplashScreen.hide({ fadeOutDuration: 0 }), 120)));
+  }, []);
+  return (
+    <>
+      <App />
+      <AnimatePresence>{splash && <Splash key="splash" onDone={endSplash} />}</AnimatePresence>
+    </>
+  );
+}
+
+function App() {
   const tasks = useLiveQuery(() => db.tasks.toArray(), []);
   const areas = useLiveQuery(() => db.areas.toArray(), []);
   const tags = useLiveQuery(() => db.tags.toArray(), []);
