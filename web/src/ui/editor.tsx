@@ -1,7 +1,7 @@
 // Expanded to-do card (Things: tap a to-do to open it in place).
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { updateTask, uid, type Task } from '../db';
+import { db, updateTask, uid, type Task } from '../db';
 import { daysLeft, parse } from '../dates';
 import type { Ctx } from '../model';
 import { describe, stopRepeating } from '../repeat';
@@ -10,6 +10,17 @@ import { Check } from './rows';
 import { Sheet, ActionList, Action } from './Sheet';
 import { WhenSheet, DeadlineSheet, TagsSheet, MoveSheet, RepeatSheet, whenInfo, liveTemplate, type SheetKind } from './pickers';
 import { CalendarIcon, TagIcon, ChecklistIcon, FlagIcon, MoreIcon, RepeatIcon, MoveIcon, TrashIcon, CloseIcon, CheckIcon } from './icons';
+
+/** Editors currently mounted per task id (a row can briefly have two while moving). */
+const openEditors = new Map<string, number>();
+
+async function discardIfBlank(id: string) {
+  if (openEditors.has(id)) return;
+  const cur = await db.tasks.get(id);
+  if (!cur || cur.deleted || cur.kind !== 'todo' || cur.repeat || cur.templateId) return;
+  const blank = !cur.title.trim() && !cur.notes.trim() && !cur.checklist.length && !cur.tagIds.length && !cur.deadline;
+  if (blank && Date.now() - cur.createdAt < 30 * 60_000) await updateTask(id, { deleted: true });
+}
 
 export function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -28,13 +39,20 @@ export function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: ()
   }, []);
 
   // Persist on unmount (closing, switching task, navigating away).
-  useEffect(() => () => {
-    const { title, notes, t } = latest.current;
-    // Like Things: a just-created to-do closed without any content is discarded.
-    const blank = !title.trim() && !notes.trim() && !t.checklist.length && !t.tagIds.length && !t.deadline;
-    if (blank && t.kind === 'todo' && !t.repeat && !t.templateId && Date.now() - t.createdAt < 30 * 60_000) {
-      void updateTask(t.id, { deleted: true });
-    } else if (title !== t.title || notes !== t.notes) void updateTask(t.id, { title, notes });
+  useEffect(() => {
+    const id = t.id;
+    openEditors.set(id, (openEditors.get(id) ?? 0) + 1);
+    return () => {
+      const n = (openEditors.get(id) ?? 1) - 1;
+      if (n) openEditors.set(id, n);
+      else openEditors.delete(id);
+      const { title, notes, t } = latest.current;
+      if (title !== t.title || notes !== t.notes) void updateTask(id, { title, notes });
+      // Like Things: a just-created to-do closed without any content is discarded.
+      // Checked a moment later and only if no editor reopened it: changing the date
+      // in Upcoming moves the row to another section, which remounts its editor.
+      setTimeout(() => void discardIfBlank(id), 400);
+    };
   }, []);
 
   // Tap outside the card closes it (sheets and other rows excluded).
