@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon foreground: the mascot (same shape as the splash), inside
+     the 108dp canvas's safe zone. Vector so it stays crisp at every density. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:translateX="262"
+        android:translateY="262"
+        android:scaleX="4.1667"
+        android:scaleY="4.1667">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M42,8 L78,8 A34,34 0 0 1 112,42 L112,78 A34,34 0 0 1 78,112 L42,112 A34,34 0 0 1 8,78 L8,42 A34,34 0 0 1 42,8 Z" />
+        <path
+            android:fillColor="#141416"
+            android:pathData="M37.5,50 A6.5,10 0 1 0 50.5,50 A6.5,10 0 1 0 37.5,50 Z" />
+        <path
+            android:fillColor="#141416"
+            android:pathData="M69.5,50 A6.5,10 0 1 0 82.5,50 A6.5,10 0 1 0 69.5,50 Z" />
+    </group>
+</vector>
