@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, createTask, createArea, type Task } from './db';
 import { getConfig } from './sync';
 import { todayStr } from './dates';
-import { isNative, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
+import { isNative, isApp, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { runRepeats } from './repeat';
 import { buildCtx, listOf, subscribeLinger, getLingerVersion, type View } from './model';
@@ -68,7 +68,7 @@ function App() {
   const [today, setToday] = useState(todayStr());
 
   useEffect(() => {
-    if (isNative) void getConfig().then((c) => !c.token && setSettings(true));
+    if (isApp) void getConfig().then((c) => !c.token && setSettings(true));
   }, []);
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { startSync, setConfig } from './sync';
-import { startUpdates, isNative } from './update';
+import { startUpdates, isApp, isDesktop } from './update';
 import { installBackHandlers } from './ui/back';
 import './styles.css';
 
@@ -13,7 +13,9 @@ if (hashToken) {
   await setConfig({ url: '', token: hashToken });
 }
 
-if (isNative) {
+if (isDesktop) document.documentElement.classList.add('desktop');
+
+if (isApp) {
   startUpdates();
 } else {
   // Browser/PWA: the service worker handles offline + updates. Not used in the

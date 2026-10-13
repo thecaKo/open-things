@@ -1,0 +1,50 @@
+{
+  "name": "open-things-desktop",
+  "version": "1.0.0",
+  "description": "Open Things for macOS",
+  "main": "main.cjs",
+  "scripts": {
+    "web": "cd ../web && npm run build && cd ../desktop && rm -rf web && cp -R ../web/dist web && rm -f web/bundle.zip",
+    "start": "npm run web && electron .",
+    "dist": "rm -rf dist && npm run web && electron-builder --mac dmg --arm64 && cp dist/*.dmg ../data/OpenThings.dmg"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "productName": "Open Things",
+  "private": true,
+  "build": {
+    "appId": "app.openthings.desktop",
+    "productName": "Open Things",
+    "copyright": "Open Things",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "web/**/*",
+      "node_modules/fflate/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        "dmg"
+      ],
+      "identity": "-",
+      "darkModeSupport": true,
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "Open Things",
+      "artifactName": "OpenThings-${version}-${arch}.dmg"
+    }
+  }
+}

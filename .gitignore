@@ -4,3 +4,5 @@ dev-dist/
 data/
 .env
 .DS_Store
+desktop/web/
+desktop/dist/

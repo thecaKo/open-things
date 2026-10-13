@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { db } from '../db';
 import { getSyncState, subscribeSync, syncNow, getConfig, setConfig } from '../sync';
-import { APP_VERSION, isNative, getUpdateStatus, subscribeUpdate, checkForUpdate } from '../update';
+import { APP_VERSION, isApp, isDesktop, getUpdateStatus, subscribeUpdate, checkForUpdate } from '../update';
 import { Sheet, ActionList, Action } from './Sheet';
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -22,7 +22,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     >
       <p className="muted">
         Your data lives on this device and syncs to your server.
-        {isNative ? ' Paste the setup link (https://server/#token=…) or fill both fields.' : ' Leave the URL empty when the app is served by the sync server itself.'}
+        {isApp ? ' Paste the setup link (https://server/#token=…) or fill both fields.' : ' Leave the URL empty when the app is served by the sync server itself.'}
       </p>
       <div className="form">
         <label className="form-row stacked">
@@ -49,13 +49,13 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
       </div>
       <p className="muted">Sync: {state}{lastError && ` · ${lastError}`}</p>
       <p className="muted">
-        Version {APP_VERSION}{isNative ? ' (app)' : ''}
-        {isNative && update.checkedAt > 0 && ` · checked ${new Date(update.checkedAt).toLocaleTimeString()}`}
+        Version {APP_VERSION}{isDesktop ? ' (Mac app)' : isApp ? ' (app)' : ''}
+        {isApp && update.checkedAt > 0 && ` · checked ${new Date(update.checkedAt).toLocaleTimeString()}`}
         {update.error && ` · update error: ${update.error}`}
       </p>
       <ActionList>
         <Action label="Sync Now" onClick={() => void syncNow()} />
-        {isNative && <Action label="Check for Updates" onClick={() => void checkForUpdate()} />}
+        {isApp && <Action label="Check for Updates" onClick={() => void checkForUpdate()} />}
       </ActionList>
       <ActionList>
         <Action danger label="Reset Local Data" onClick={async () => {

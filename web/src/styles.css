@@ -421,6 +421,21 @@ h1, h2, p { margin: 0; }
   white-space: nowrap;
 }
 
+/* ---------- macOS app window (Electron, hidden title bar) ---------- */
+.desktop .sidebar .nav-scroll { padding-top: 52px; } /* room for the traffic lights */
+.desktop .sidebar::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 290px;
+  height: 44px;
+  -webkit-app-region: drag; /* drag the window by the top of the sidebar… */
+  z-index: 10;
+}
+.desktop .topbar { -webkit-app-region: drag; } /* …or the list's top bar */
+.desktop .topbar button, .desktop .search, .desktop input { -webkit-app-region: no-drag; }
+
 /* ---------- Wide screens (Mac / desktop): Things for Mac density ---------- */
 @media (min-width: 760px) {
   :root { --fs: 15px; --row-pad: 7px; --check-size: 18px; }

@@ -68,6 +68,18 @@ The APK bundles the web app, so it works offline from the first launch. On launc
 
 Building requires Java 21 and the Android SDK (`brew install openjdk@21 && brew install --cask android-commandlinetools`, then `sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"`). APKs are signed with the local debug key (`~/.android/debug.keystore`). Keep that file, because Android only accepts updates signed with the same key.
 
+## macOS app (Electron)
+
+`desktop/` wraps the same web app in a native window: Things-style hidden title bar, Dock and Cmd+Tab, offline-first. It uses the same sync server and the same over-the-air UI updates as Android. The bundled UI is served from an `app://` origin. A newer `/bundle.zip` from the server, verified by SHA-256, is unpacked into the app's data folder and used from then on. Installing a newer `.dmg` discards those downloaded bundles.
+
+```bash
+cd desktop && npm install
+npm start      # run from source
+npm run dist   # build desktop/dist/OpenThings-<version>-arm64.dmg (also copied to data/OpenThings.dmg)
+```
+
+The server offers the installers at `<server>/OpenThings.dmg` and `<server>/open-things.apk`. Both are read from `data/`. The app is ad-hoc signed and not notarized. A `.dmg` downloaded through a browser therefore needs right-click → Open the first time, or System Settings → Privacy & Security → Open Anyway.
+
 ## Development
 
 ```bash
@@ -78,5 +90,4 @@ cd web && npm install && npm run dev                               # :5173, prox
 ## Roadmap
 
 - Drag-and-drop reordering, Quick Find, reminders/notifications
-- Native wrappers: Capacitor (Android APK) / Tauri (macOS), reusing `web/` as is
 - Field-level merge for conflicts

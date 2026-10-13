@@ -112,13 +112,24 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain', '.zip': 'application/zip', '.apk': 'application/vnd.android.package-archive',
 };
 
+const DOWNLOADS: Record<string, { file: string; type: string }> = {
+  '/open-things.apk': { file: 'open-things.apk', type: MIME['.apk'] },
+  '/OpenThings.dmg': { file: 'OpenThings.dmg', type: 'application/x-apple-diskimage' },
+};
+
 function serveStatic(res: http.ServerResponse, pathname: string) {
-  // The Android APK lives in DATA_DIR so web rebuilds don't wipe it.
-  if (pathname === '/open-things.apk') {
-    const apk = path.join(DATA_DIR, 'open-things.apk');
-    if (!fs.existsSync(apk)) return json(res, 404, { error: 'no apk uploaded' });
-    res.writeHead(200, { 'content-type': MIME['.apk'], 'cache-control': 'no-cache' });
-    return void fs.createReadStream(apk).pipe(res);
+  // App installers live in DATA_DIR so web rebuilds don't wipe them.
+  const download = DOWNLOADS[pathname];
+  if (download) {
+    const file = path.join(DATA_DIR, download.file);
+    if (!fs.existsSync(file)) return json(res, 404, { error: `${download.file} not uploaded` });
+    res.writeHead(200, {
+      'content-type': download.type,
+      'cache-control': 'no-cache',
+      'content-length': fs.statSync(file).size,
+      'content-disposition': `attachment; filename="${download.file}"`,
+    });
+    return void fs.createReadStream(file).pipe(res);
   }
   if (pathname === '/version.json' || pathname === '/bundle.zip') console.log(`update ${pathname}`);
   let file = path.resolve(STATIC_DIR, '.' + decodeURIComponent(pathname));
