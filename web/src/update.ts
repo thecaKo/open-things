@@ -69,7 +69,9 @@ export async function checkForUpdate() {
     if (!res.ok) return;
     const { version, checksum } = (await res.json()) as { version?: string; checksum?: string };
     setStatus({ checkedAt: Date.now(), latest: version ?? '', error: '' });
-    if (!version || version === APP_VERSION || ready?.version === version) return;
+    // Versions are build timestamps: only ever move forward (a freshly installed app
+    // can be newer than what the server has).
+    if (!version || version <= APP_VERSION || ready?.version === version) return;
     ready = { id: await stage(`${url}/bundle.zip?${auth}`, version, checksum), version };
     subscribers.forEach((fn) => fn());
   } catch (e) {

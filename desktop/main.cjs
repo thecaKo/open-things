@@ -21,12 +21,22 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
-/** Directory to serve the UI from: a downloaded bundle if it belongs to this app build. */
+/** Version (build timestamp) of a web bundle directory, '' if unknown. */
+function bundleVersion(dir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8')).version ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Directory to serve the UI from: a downloaded bundle only if it is newer than the
+ *  one inside the .app (versions are build timestamps, so they compare as strings). */
 function webRoot() {
   try {
     const active = JSON.parse(fs.readFileSync(ACTIVE(), 'utf8'));
-    if (active.appVersion === app.getVersion() && fs.existsSync(path.join(active.dir, 'index.html'))) return active.dir;
-    // A new .dmg was installed: its bundled UI wins; drop bundles made for the old build.
+    if (fs.existsSync(path.join(active.dir, 'index.html')) && active.version > bundleVersion(BUNDLED)) return active.dir;
+    // The .app has the same or a newer UI (e.g. a new .dmg): drop the old downloads.
     fs.rmSync(BUNDLES(), { recursive: true, force: true });
     fs.rmSync(ACTIVE(), { force: true });
   } catch {

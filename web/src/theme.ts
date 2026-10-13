@@ -41,13 +41,20 @@ export function setThemePref(next: ThemePref, origin?: { x: number; y: number })
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!doc.startViewTransition || reduce || before === resolvedTheme()) return apply();
 
-  const x = origin?.x ?? window.innerWidth / 2;
-  const y = origin?.y ?? window.innerHeight / 2;
-  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  // Percentages, not px: they are relative to the transition snapshot itself, whose
+  // internal scale differs between engines (Electron on a 2× Mac display halved px
+  // coordinates, so the circle started away from the tapped control).
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const x = origin?.x ?? w / 2;
+  const y = origin?.y ?? h / 2;
+  const radius = Math.hypot(Math.max(x, w - x), Math.max(y, h - y));
+  const at = `at ${(x / w) * 100}% ${(y / h) * 100}%`;
+  const end = (radius / (Math.hypot(w, h) / Math.SQRT2)) * 100; // circle() % is of √((w²+h²)/2)
   const transition = doc.startViewTransition(apply);
   void transition.ready.then(() => {
     document.documentElement.animate(
-      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { clipPath: [`circle(0% ${at})`, `circle(${end}% ${at})`] },
       { duration: 480, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' },
     );
   });
