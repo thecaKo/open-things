@@ -30,26 +30,31 @@ Copies are generated on each device from data alone. Ids are deterministic (`<te
 
 Each device keeps a full local copy. On every edit (debounced), on focus, and when the server pushes an event (SSE), the client sends its dirty records and pulls everything after its last server `seq`. Conflicts are resolved **last-write-wins per record** by `updatedAt`, so the device clocks need to be roughly correct. Deletions are tombstones (`deleted: true`).
 
-## Deploy on the Oracle VM
+## Deploy (Oracle Cloud VM)
+
+The sync server, web app, OTA bundles and installers all run on one VM (Docker + Caddy with automatic HTTPS). The server is private: every request except `/api/health` needs the token.
 
 ```bash
-# on the VM (Docker + compose plugin installed; ports 80/443 open in the VCN security list AND the VM firewall)
-git clone <this repo> open-things && cd open-things
-cp .env.example .env   # set DOMAIN and OPEN_THINGS_TOKEN (openssl rand -hex 24)
+# on the VM (Docker + compose; ports 80/443 open in the VCN security list and in iptables)
+git clone git@github.com:<you>/open-things.git && cd open-things   # read-only deploy key
+cp .env.example .env   # DOMAIN (e.g. 1-2-3-4.sslip.io) and OPEN_THINGS_TOKEN (openssl rand -hex 32)
 docker compose up -d --build
+# redeploy: git pull && docker compose up -d --build
 ```
 
-Oracle Ubuntu images block ports at the OS firewall too:
+The apps have the server built in, so there is no setup screen. Builds read it from `web/.env.local`, which is not committed:
 
-```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo netfilter-persistent save
+```
+VITE_SERVER_URL=https://<DOMAIN>
+VITE_SERVER_TOKEN=<OPEN_THINGS_TOKEN>
 ```
 
-Then, on each device, open `https://<DOMAIN>/#token=<OPEN_THINGS_TOKEN>` once. The token is saved locally and removed from the URL. After that, install the app to the Dock or home screen.
+The Docker build gets the same two values from `.env` as build args.
 
-Backup: copy `data/open-things.sqlite`.
+- **Browser / PWA:** open `https://<DOMAIN>/?token=<token>` once. An HttpOnly cookie keeps you signed in.
+- **Installers:** `https://<DOMAIN>/open-things.apk?token=…` and `https://<DOMAIN>/OpenThings.dmg?token=…`. Copy them into `data/` on the VM.
+- **Backup:** copy `data/open-things.sqlite`.
+- **Moving servers:** `node tools/push-db.ts <old.sqlite> https://<DOMAIN> <token>` merges an old database. The newer version of each record wins.
 
 ### Import from Things 3
 
