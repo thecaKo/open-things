@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Open Things</string>
+    <string name="title_activity_main">Open Things</string>
+    <string name="package_name">app.openthings</string>
+    <string name="custom_url_scheme">app.openthings</string>
+</resources>
