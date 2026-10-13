@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { AnimatePresence, motion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, createTask, createArea, type Task } from './db';
-import { getConfig } from './sync';
 import { todayStr } from './dates';
 import { isNative, isApp, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
 import { SplashScreen } from '@capacitor/splash-screen';
@@ -68,7 +67,6 @@ function App() {
   const [today, setToday] = useState(todayStr());
 
   useEffect(() => {
-    if (isApp) void getConfig().then((c) => !c.token && setSettings(true));
   }, []);
 
   useEffect(() => {

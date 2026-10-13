@@ -43,16 +43,16 @@ export function subscribeUpdate(fn: () => void) {
 }
 
 /** Download the bundle and stage it; returns an id to apply it with. */
-async function stage(url: string, version: string, checksum?: string): Promise<string> {
+async function stage(bundleUrl: string, version: string, checksum?: string): Promise<string> {
   if (desktop) {
-    await desktop.downloadUpdate({ url: `${url}/bundle.zip`, version, checksum });
+    await desktop.downloadUpdate({ url: bundleUrl, version, checksum });
     return version;
   }
   const { bundles } = await CapacitorUpdater.list();
   const bundle =
     // A downloaded-but-not-yet-applied bundle is 'pending': reuse it instead of re-downloading.
     bundles.find((b) => b.version === version && (b.status === 'success' || b.status === 'pending')) ??
-    (await CapacitorUpdater.download({ url: `${url}/bundle.zip`, version, checksum }));
+    (await CapacitorUpdater.download({ url: bundleUrl, version, checksum }));
   await CapacitorUpdater.next({ id: bundle.id }); // applied when the app goes to background
   return bundle.id;
 }
@@ -62,14 +62,15 @@ export async function checkForUpdate() {
   if (!isApp || checking) return;
   checking = true;
   try {
-    const { url } = await getConfig();
+    const { url, token } = await getConfig();
     if (!url) return;
-    const res = await fetch(`${url}/version.json`, { cache: 'no-store' });
+    const auth = `token=${encodeURIComponent(token)}`; // the whole server is private
+    const res = await fetch(`${url}/version.json?${auth}`, { cache: 'no-store' });
     if (!res.ok) return;
     const { version, checksum } = (await res.json()) as { version?: string; checksum?: string };
     setStatus({ checkedAt: Date.now(), latest: version ?? '', error: '' });
     if (!version || version === APP_VERSION || ready?.version === version) return;
-    ready = { id: await stage(url, version, checksum), version };
+    ready = { id: await stage(`${url}/bundle.zip?${auth}`, version, checksum), version };
     subscribers.forEach((fn) => fn());
   } catch (e) {
     console.warn('update check failed', e);

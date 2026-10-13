@@ -6,3 +6,4 @@ data/
 .DS_Store
 desktop/web/
 desktop/dist/
+*.local

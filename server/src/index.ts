@@ -79,13 +79,32 @@ function broadcast() {
 }
 setInterval(() => { for (const res of listeners) res.write(': ping\n\n'); }, 25_000);
 
-function authorized(req: http.IncomingMessage, url: URL) {
-  const header = req.headers.authorization ?? '';
-  const given = header.startsWith('Bearer ') ? header.slice(7) : (url.searchParams.get('token') ?? '');
+const COOKIE = 'ot_token';
+
+function tokenMatches(given: string) {
   const a = Buffer.from(given);
   const b = Buffer.from(TOKEN);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+function cookieToken(req: http.IncomingMessage) {
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === COOKIE) return decodeURIComponent(v.join('='));
+  }
+  return '';
+}
+
+/** Token via Authorization header, ?token= (apps, EventSource) or the login cookie (browser). */
+function authorized(req: http.IncomingMessage, url: URL) {
+  const header = req.headers.authorization ?? '';
+  const candidates = [header.startsWith('Bearer ') ? header.slice(7) : '', url.searchParams.get('token') ?? '', cookieToken(req)];
+  return candidates.some((t) => t && tokenMatches(t));
+}
+
+const LOGIN_PAGE = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open Things</title>
+<body style="font:16px -apple-system,Roboto,sans-serif;background:#141416;color:#eee;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
+<div><h1 style="font-size:22px">Open Things</h1><p style="color:#999">Open your personal setup link to sign in.</p></div></body>`;
 
 function readJson(req: http.IncomingMessage, limit = 20 * 1024 * 1024): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -177,7 +196,23 @@ const server = http.createServer(async (req, res) => {
       return json(res, 404, { error: 'not found' });
     }
 
-    if (req.method === 'GET') return serveStatic(res, url.pathname);
+    // Everything else (web app, OTA bundles, installers) is private too: the apps have
+    // the token built in, so serving them openly would leak it.
+    if (req.method === 'GET') {
+      if (!authorized(req, url)) {
+        res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        return void res.end(LOGIN_PAGE);
+      }
+      // Browser sign-in: /?token=… stores the token in a cookie and drops it from the URL.
+      if (url.searchParams.has('token') && !req.headers.authorization && req.headers['sec-fetch-mode'] === 'navigate') {
+        res.writeHead(302, {
+          'set-cookie': `${COOKIE}=${encodeURIComponent(url.searchParams.get('token')!)}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`,
+          location: url.pathname,
+        });
+        return void res.end();
+      }
+      return serveStatic(res, url.pathname);
+    }
     json(res, 405, { error: 'method not allowed' });
   } catch (e) {
     console.error(e);

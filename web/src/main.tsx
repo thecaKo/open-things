@@ -1,17 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import { startSync, setConfig } from './sync';
+import { startSync } from './sync';
 import { startUpdates, isApp, isDesktop } from './update';
 import { installBackHandlers } from './ui/back';
 import './styles.css';
 
-// One-tap device setup: open https://your-server/#token=XXXX
-const hashToken = new URLSearchParams(location.hash.slice(1)).get('token');
-if (hashToken) {
-  history.replaceState(null, '', location.pathname);
-  await setConfig({ url: '', token: hashToken });
-}
 
 if (isDesktop) document.documentElement.classList.add('desktop');
 

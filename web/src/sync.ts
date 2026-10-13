@@ -22,21 +22,26 @@ export function subscribeSync(fn: () => void) {
   return () => void subscribers.delete(fn);
 }
 
+// The server is fixed at build time (web/.env.local or Docker build args), so the
+// apps connect on their own: VITE_SERVER_URL ('' = same origin) + VITE_SERVER_TOKEN.
 export interface SyncConfig {
-  url: string; // '' = same origin as the web app
+  url: string;
   token: string;
 }
-
+const SERVER: SyncConfig = {
+  url: (import.meta.env.VITE_SERVER_URL ?? '').replace(/\/+$/, ''),
+  token: import.meta.env.VITE_SERVER_TOKEN ?? '',
+};
 export async function getConfig(): Promise<SyncConfig> {
-  const row = await db.meta.get('config');
-  return (row?.value as SyncConfig) ?? { url: '', token: '' };
+  return SERVER;
 }
 
-export async function setConfig(cfg: SyncConfig) {
-  await db.meta.put({ key: 'config', value: { url: cfg.url.replace(/\/+$/, ''), token: cfg.token.trim() } });
-  await db.meta.delete('seq'); // new server: pull everything again
-  connectEvents();
-  void syncNow();
+/** Devices set up by hand before the server was built in: when the server changes,
+ *  pull everything again from it (local unsynced edits are still pushed). */
+async function migrateServer() {
+  const old = (await db.meta.get('config'))?.value as SyncConfig | undefined;
+  if (old && old.url !== SERVER.url) await db.meta.delete('seq');
+  if (old?.url !== SERVER.url) await db.meta.put({ key: 'config', value: { url: SERVER.url } });
 }
 
 let running = false;
@@ -123,6 +128,7 @@ async function connectEvents() {
 }
 
 export function startSync() {
+  void migrateServer().then(() => syncNow());
   setOnLocalChange(() => {
     clearTimeout(debounce);
     debounce = setTimeout(() => void syncNow(), 400);
@@ -134,5 +140,4 @@ export function startSync() {
   });
   setInterval(() => void syncNow(), 60_000);
   void connectEvents();
-  void syncNow();
 }

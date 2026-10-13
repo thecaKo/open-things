@@ -3,7 +3,10 @@ WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
-RUN npm run build
+# The web app (and the OTA bundle built from it) has the server built in.
+ARG VITE_SERVER_URL
+ARG VITE_SERVER_TOKEN
+RUN test -n "$VITE_SERVER_URL" && test -n "$VITE_SERVER_TOKEN" && npm run build
 
 FROM node:24-slim
 WORKDIR /app

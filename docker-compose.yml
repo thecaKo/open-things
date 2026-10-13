@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_SERVER_URL: https://${DOMAIN}
+        VITE_SERVER_TOKEN: ${OPEN_THINGS_TOKEN}
     restart: unless-stopped
     environment:
       OPEN_THINGS_TOKEN: ${OPEN_THINGS_TOKEN:?set OPEN_THINGS_TOKEN in .env}
