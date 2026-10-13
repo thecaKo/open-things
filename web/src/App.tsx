@@ -1,75 +1,49 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  db, createTask, updateTask, updateTasks, createArea, updateArea, createTag, uid,
-  type Task, type Area, type Tag, type RepeatRule,
-} from './db';
-import { getSyncState, subscribeSync, syncNow, getConfig, setConfig } from './sync';
-import { todayStr, addDays, isToday, dayLabel, daysLeft, fmt } from './dates';
-import { APP_VERSION, isNative, getPendingUpdate, getUpdateStatus, subscribeUpdate, applyUpdate, checkForUpdate } from './update';
-import { runRepeats, occurrencesBetween, describe, defaultRule, makeRepeating, stopRepeating, WEEKDAYS, ordinalLabel } from './repeat';
+import { db, createTask, createArea, type Task } from './db';
+import { getConfig } from './sync';
+import { todayStr } from './dates';
+import { isNative, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
+import { runRepeats } from './repeat';
+import { buildCtx, listOf, subscribeLinger, getLingerVersion, type View } from './model';
+import { useBack } from './ui/back';
+import { useWide } from './ui/hooks';
+import { Navigator } from './ui/nav';
+import { ListScreen } from './ui/screen';
+import { SettingsSheet } from './ui/settings';
+import { Sheet, ActionList, Action } from './ui/Sheet';
+import { AreaIcon } from './ui/icons';
+import { ProgressPie } from './ui/rows';
 
-type ListKind = 'inbox' | 'today' | 'upcoming' | 'anytime' | 'someday' | 'logbook' | 'trash';
-type View = { kind: ListKind } | { kind: 'project'; id: string } | { kind: 'area'; id: string };
+const initialView = (): View => {
+  try {
+    return JSON.parse(localStorage.getItem('view') ?? '') as View;
+  } catch {
+    return { kind: 'today' };
+  }
+};
 
-interface Ctx {
-  tasks: Task[]; // excludes repeating templates and their child to-dos
-  all: Task[]; // every non-deleted task, templates included
-  templates: Task[]; // active repeating templates
-  byId: Map<string, Task>;
-  areas: Area[];
-  projects: Task[];
-  tags: Tag[];
-  tagById: Map<string, Tag>;
-  today: string;
-  open: (v: View) => void;
-}
-
-interface Section {
-  key: string;
-  title?: string;
-  heading?: Task;
-  items: Task[];
-  defaults?: Partial<Task>;
-}
-
-const LISTS: { kind: ListKind; label: string; icon: string; color: string }[] = [
-  { kind: 'inbox', label: 'Inbox', icon: '⬇', color: '#3b82f6' },
-  { kind: 'today', label: 'Today', icon: '★', color: '#f5b400' },
-  { kind: 'upcoming', label: 'Upcoming', icon: '▦', color: '#e5484d' },
-  { kind: 'anytime', label: 'Anytime', icon: '≋', color: '#14a3a3' },
-  { kind: 'someday', label: 'Someday', icon: '▢', color: '#b59a6a' },
-  { kind: 'logbook', label: 'Logbook', icon: '✓', color: '#30a46c' },
-  { kind: 'trash', label: 'Trash', icon: '⌫', color: '#8b8d98' },
-];
-
-const alive = (t: Task) => !t.deleted && !t.trashed;
-const byIndex = (a: { index: number }, b: { index: number }) => a.index - b.index;
-/** Completed items stay visible (struck through) for the rest of the day, like Things. */
-const shown = (t: Task) => t.status === 'open' || isToday(t.completedAt);
-
-function parentActive(t: Task, ctx: Ctx) {
-  if (!t.projectId) return true;
-  const p = ctx.byId.get(t.projectId);
-  return !!p && alive(p) && p.status === 'open' && p.start !== 'someday' && !(p.startDate && p.startDate > ctx.today);
-}
-
-const inToday = (t: Task, today: string) =>
-  (!!t.startDate && t.startDate <= today) || (!!t.deadline && t.deadline <= today && t.status === 'open');
-
-// ---------------------------------------------------------------------------
+// Phone: screens slide like a navigation stack. dir 1 = push, -1 = pop.
+const slide = {
+  enter: (dir: number) => ({ x: dir > 0 ? '100%' : '-25%', opacity: dir > 0 ? 1 : 0.6 }),
+  center: { x: 0, opacity: 1 },
+  exit: (dir: number) => ({ x: dir > 0 ? '-25%' : '100%', opacity: dir > 0 ? 0.6 : 1 }),
+};
 
 export default function App() {
-  const tasks = useLiveQuery(() => db.tasks.toArray(), []) ?? [];
-  const areas = useLiveQuery(() => db.areas.toArray(), []) ?? [];
-  const tags = useLiveQuery(() => db.tags.toArray(), []) ?? [];
-  const [view, setView] = useState<View>(() => JSON.parse(localStorage.getItem('view') ?? '{"kind":"today"}'));
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [menu, setMenu] = useState(false);
+  const tasks = useLiveQuery(() => db.tasks.toArray(), []);
+  const areas = useLiveQuery(() => db.areas.toArray(), []);
+  const tags = useLiveQuery(() => db.tags.toArray(), []);
+  useSyncExternalStore(subscribeLinger, getLingerVersion); // re-render when completed items leave
+  const wide = useWide();
+  const [view, setView] = useState<View>(initialView);
+  const [history, setHistory] = useState<View[]>([]);
+  const [dir, setDir] = useState(1);
   const [settings, setSettings] = useState(false);
+  const [newList, setNewList] = useState(false);
   const [today, setToday] = useState(todayStr());
 
-  // Native app has no same-origin server: ask for the setup link on first launch.
   useEffect(() => {
     if (isNative) void getConfig().then((c) => !c.token && setSettings(true));
   }, []);
@@ -81,936 +55,118 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener('focus', tick); };
   }, []);
 
+  const ctx = useMemo(() => buildCtx(tasks ?? [], areas ?? [], tags ?? [], today), [tasks, areas, tags, today]);
+
+  // On wide screens the lists are always visible in the sidebar, so "home" means Today.
+  const shownView: View = wide && view.kind === 'home' ? { kind: 'today' } : view;
+
   const open = (v: View) => {
+    if (JSON.stringify(v) === JSON.stringify(shownView)) return;
+    setDir(1);
+    setHistory((h) => [...h, shownView]);
     setView(v);
-    setExpanded(null);
-    setMenu(false);
     localStorage.setItem('view', JSON.stringify(v));
   };
+  const back = () => {
+    setDir(-1);
+    const prev = history[history.length - 1] ?? { kind: 'home' };
+    setHistory((h) => h.slice(0, -1));
+    setView(prev);
+    localStorage.setItem('view', JSON.stringify(prev));
+  };
+  useBack(!wide && view.kind !== 'home', back);
 
-  const ctx: Ctx = useMemo(() => {
-    const all = tasks.filter((t) => !t.deleted);
-    const byId = new Map(all.map((t) => [t.id, t]));
-    const isTemplatePart = (t: Task) => !!t.repeat || (!!t.projectId && !!byId.get(t.projectId)?.repeat);
-    const live = all.filter((t) => !isTemplatePart(t));
-    return {
-      tasks: live,
-      all,
-      templates: all.filter((t) => t.repeat && alive(t) && t.status === 'open').sort(byIndex),
-      byId,
-      areas: areas.filter((a) => !a.deleted).sort(byIndex),
-      projects: live.filter((t) => t.kind === 'project' && alive(t) && t.status === 'open').sort(byIndex),
-      tags: tags.filter((t) => !t.deleted).sort((a, b) => a.title.localeCompare(b.title)),
-      tagById: new Map(tags.map((t) => [t.id, t])),
-      today,
-      open,
-    };
-  }, [tasks, areas, tags, today]);
+  const onFound = (t: Task) => open(listOf(t, ctx));
+  const backLabel = (() => {
+    const prev = history[history.length - 1];
+    if (prev?.kind === 'area') return ctx.areas.find((a) => a.id === prev.id)?.title || 'Area';
+    if (prev?.kind === 'project') return ctx.byId.get(prev.id)?.title || 'Project';
+    return 'Lists';
+  })();
 
-  // Keyboard: "n" new to-do, Escape closes the editor.
-  const newTodoRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const typing = (e.target as HTMLElement)?.closest('input, textarea, select');
-      if (e.key === 'Escape') setExpanded(null);
-      else if (!typing && (e.key === 'n' || e.key === ' ') && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        newTodoRef.current();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  if (!tasks || !areas || !tags) return <div className="app loading" />;
 
-  const model = buildView(view, ctx);
-  const add = async (defaults: Partial<Task> = model.defaults ?? {}) => setExpanded(await createTask(defaults));
-  newTodoRef.current = () => model.defaults && add();
+  const nav = (
+    <Navigator view={shownView} ctx={ctx} onOpen={open} onSettings={() => setSettings(true)} onNewList={() => setNewList(true)} onFound={onFound} />
+  );
+  const screen = (v: View) => (
+    <ListScreen key={JSON.stringify(v)} view={v} ctx={ctx} wide={wide} onBack={back} onOpen={open} backLabel={backLabel} />
+  );
 
   return (
-    <div className={'app' + (menu ? ' menu-open' : '')}>
-      <Sidebar view={view} ctx={ctx} onSettings={() => setSettings(true)} />
-      <div className="scrim" onClick={() => setMenu(false)} />
-      <main className="main">
-        <header className="main-header">
-          <button className="menu-btn" onClick={() => setMenu(true)} aria-label="Menu">☰</button>
-          {model.icon && <span className="list-icon" style={{ color: model.color }}>{model.icon}</span>}
-          {model.titleNode ?? <h1>{model.title}</h1>}
-          <div className="spacer" />
-          {model.actions}
-        </header>
-        {model.header}
-        <div className="list">
-          {model.sections.map((s) => (
-            <div className="section" key={s.key}>
-              {s.heading ? (
-                <HeadingRow h={s.heading} onAdd={() => add(s.defaults)} />
-              ) : (
-                s.title && <h2 className="section-title">{s.title}</h2>
-              )}
-              {s.items.map((t) =>
-                t.kind === 'project' ? (
-                  <ProjectRow key={t.id} p={t} ctx={ctx} />
-                ) : (
-                  <TaskRow
-                    key={t.id}
-                    t={t}
-                    ctx={ctx}
-                    view={view}
-                    expanded={expanded === t.id}
-                    onExpand={(id) => setExpanded(id)}
-                  />
-                ),
-              )}
-            </div>
-          ))}
-          {model.sections.every((s) => s.items.length === 0 && !s.heading) && (
-            <div className="empty">{model.empty ?? 'Nothing here.'}</div>
-          )}
-        </div>
-        {model.defaults && (
-          <button className="fab" onClick={() => add()} title="New To-Do (n)">＋</button>
-        )}
-      </main>
-      {settings && <Settings onClose={() => setSettings(false)} />}
+    <div className={'app' + (wide ? ' wide' : ' phone')}>
+      {wide ? (
+        <>
+          <aside className="sidebar">{nav}</aside>
+          <main className="main">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={JSON.stringify(shownView)}
+                className="screen"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {screen(shownView)}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </>
+      ) : (
+        <AnimatePresence initial={false} custom={dir}>
+          <motion.div
+            key={JSON.stringify(view)}
+            className="screen"
+            custom={dir}
+            variants={slide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: 'spring', damping: 36, stiffness: 340, mass: 0.9 }}
+          >
+            {view.kind === 'home' ? nav : screen(view)}
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      <SettingsSheet open={settings} onClose={() => setSettings(false)} />
+      <Sheet open={newList} onClose={() => setNewList(false)} title="New List">
+        <ActionList>
+          <Action
+            icon={<ProgressPie p={{ status: 'open' } as Task} ctx={ctx} size={22} />}
+            color="var(--accent)"
+            label={<span className="action-two">New Project<small>Define a goal, then work towards it one to-do at a time.</small></span>}
+            onClick={async () => { setNewList(false); open({ kind: 'project', id: await createTask({ kind: 'project', title: '', start: 'anytime' }) }); }}
+          />
+          <Action
+            icon={<AreaIcon size={22} />}
+            color="var(--area)"
+            label={<span className="action-two">New Area<small>Group your projects and to-dos by area of responsibility.</small></span>}
+            onClick={async () => { setNewList(false); open({ kind: 'area', id: await createArea('') }); }}
+          />
+        </ActionList>
+      </Sheet>
       <UpdateBanner />
     </div>
   );
 }
 
-function UpdateStatus() {
-  const s = useSyncExternalStore(subscribeUpdate, getUpdateStatus);
-  if (!s.checkedAt) return <p className="muted">Update: not checked yet</p>;
-  return (
-    <p className="muted">
-      Update checked {new Date(s.checkedAt).toLocaleTimeString()}
-      {s.latest && ` · server has ${s.latest}`}
-      {s.error && ` · error: ${s.error}`}
-    </p>
-  );
-}
-
 function UpdateBanner() {
   const pending = useSyncExternalStore(subscribeUpdate, getPendingUpdate);
-  if (!pending) return null;
   return (
-    <button className="update-banner" onClick={() => void applyUpdate()}>
-      New version available. Tap to update.
-    </button>
-  );
-}
-
-// --- View model ------------------------------------------------------------
-
-interface ViewModel {
-  title: string;
-  titleNode?: ReactNode;
-  icon?: string;
-  color?: string;
-  sections: Section[];
-  defaults?: Partial<Task>;
-  header?: ReactNode;
-  actions?: ReactNode;
-  empty?: string;
-}
-
-function buildView(view: View, ctx: Ctx): ViewModel {
-  const { today } = ctx;
-  const todos = ctx.tasks.filter((t) => t.kind === 'todo' && alive(t));
-  const list = LISTS.find((l) => l.kind === view.kind);
-  const base = { title: list?.label ?? '', icon: list?.icon, color: list?.color };
-
-  switch (view.kind) {
-    case 'inbox':
-      return {
-        ...base,
-        sections: [{ key: 'i', items: todos.filter((t) => shown(t) && t.start === 'inbox' && !t.startDate && !t.projectId && !t.areaId).sort(byIndex) }],
-        defaults: { start: 'inbox' },
-      };
-    case 'today': {
-      const items = todos.filter((t) => shown(t) && inToday(t, today) && parentActiveOrScheduled(t, ctx)).sort(byIndex);
-      return {
-        ...base,
-        sections: ([
-          { key: 'd', items: items.filter((t) => !t.evening) },
-          { key: 'e', title: 'This Evening', items: items.filter((t) => t.evening) },
-        ] as Section[]).filter((s) => s.key === 'd' || s.items.length),
-        defaults: { start: 'anytime', startDate: today },
-      };
-    }
-    case 'upcoming': {
-      const future = ctx.tasks.filter((t) => t.kind !== 'heading' && alive(t) && t.status === 'open' && t.startDate && t.startDate > today);
-      // Projected copies of fixed-schedule repeating items (not created until their day).
-      const horizon = addDays(today, 60);
-      const ghosts = ctx.templates
-        .filter((tpl) => tpl.repeat!.type === 'schedule')
-        .flatMap((tpl) => {
-          const made = new Set(ctx.all.filter((t) => t.templateId === tpl.id).map((t) => t.occurrence));
-          return occurrencesBetween(tpl.repeat!, today, horizon, 8)
-            .filter((d) => !made.has(d))
-            .map((d): Task => ({ ...tpl, id: `ghost:${tpl.id}:${d}`, startDate: d, templateId: tpl.id, repeat: null, ghost: true }));
-        });
-      const items = [...future, ...ghosts];
-      const days = [...new Set(items.map((t) => t.startDate!))].sort();
-      return {
-        ...base,
-        sections: [
-          ...days.map((d) => ({ key: d, title: dayLabel(d), items: items.filter((t) => t.startDate === d).sort(byIndex) })),
-          ...(ctx.templates.length ? [{ key: 'repeating', title: 'Repeating', items: ctx.templates }] : []),
-        ],
-        defaults: { start: 'anytime', startDate: addDays(today, 1) },
-        empty: 'Nothing scheduled.',
-      };
-    }
-    case 'anytime': {
-      const items = todos.filter((t) => shown(t) && t.start === 'anytime' && !(t.startDate && t.startDate > today) && parentActive(t, ctx));
-      const groups = new Map<string, Task[]>();
-      for (const t of items) {
-        const key = t.projectId ?? t.areaId ?? '';
-        groups.set(key, [...(groups.get(key) ?? []), t]);
-      }
-      const sections = [...groups.entries()].map(([key, ts]) => ({
-        key: key || 'none',
-        title: key ? (ctx.byId.get(key)?.title ?? ctx.areas.find((a) => a.id === key)?.title ?? '') : undefined,
-        items: ts.sort(byIndex),
-      }));
-      sections.sort((a, b) => (a.title ? 1 : 0) - (b.title ? 1 : 0));
-      return { ...base, sections, defaults: { start: 'anytime' } };
-    }
-    case 'someday':
-      return {
-        ...base,
-        sections: [{
-          key: 's',
-          items: ctx.tasks
-            .filter((t) => t.kind !== 'heading' && alive(t) && shown(t) && t.start === 'someday' && !t.startDate && (t.kind === 'project' || parentActive(t, ctx)))
-            .sort(byIndex),
-        }],
-        defaults: { start: 'someday' },
-      };
-    case 'logbook': {
-      const done = ctx.tasks
-        .filter((t) => t.kind !== 'heading' && alive(t) && t.status !== 'open')
-        .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
-      const days = [...new Set(done.map((t) => fmt(new Date(t.completedAt ?? 0))))];
-      return {
-        ...base,
-        sections: days.map((d) => ({ key: d, title: dayLabel(d), items: done.filter((t) => fmt(new Date(t.completedAt ?? 0)) === d) })),
-        empty: 'No completed items yet.',
-      };
-    }
-    case 'trash': {
-      const trashed = ctx.all.filter((t) => t.trashed && t.kind !== 'heading' && !(t.projectId && ctx.byId.get(t.projectId)?.trashed));
-      return {
-        ...base,
-        sections: [{ key: 't', items: trashed.sort((a, b) => b.updatedAt - a.updatedAt) }],
-        actions: trashed.length > 0 && (
-          <button className="btn" onClick={() => confirm('Permanently delete all items in Trash?') && updateTasks(ctx.all.filter((t) => t.trashed).map((t) => t.id), { deleted: true })}>
-            Empty Trash
-          </button>
-        ),
-        empty: 'Trash is empty.',
-      };
-    }
-    case 'project': {
-      const p = ctx.byId.get(view.id);
-      if (!p || p.deleted) return { title: 'Project not found', sections: [] };
-      const children = ctx.all.filter((t) => t.projectId === p.id && (p.trashed || !t.trashed));
-      const items = children.filter((t) => t.kind === 'todo');
-      const headings = children.filter((t) => t.kind === 'heading').sort(byIndex);
-      const visible = (t: Task) => shown(t) && t.kind === 'todo';
-      const total = items.length;
-      const doneCount = items.filter((t) => t.status !== 'open').length;
-      const start = p.start === 'someday' ? 'someday' : 'anytime';
-      return {
-        title: p.title,
-        titleNode: <ProjectTitle p={p} done={doneCount} total={total} />,
-        header: <ProjectHeader p={p} ctx={ctx} items={items} headings={headings} />,
-        sections: [
-          { key: 'root', items: items.filter((t) => visible(t) && !t.headingId).sort(byIndex) },
-          ...headings.map((h) => ({
-            key: h.id,
-            heading: h,
-            items: items.filter((t) => visible(t) && t.headingId === h.id).sort(byIndex),
-            defaults: { projectId: p.id, headingId: h.id, start } as Partial<Task>,
-          })),
-        ],
-        defaults: { projectId: p.id, start },
-        empty: 'No to-dos yet.',
-      };
-    }
-    case 'area': {
-      const a = ctx.areas.find((x) => x.id === view.id);
-      if (!a) return { title: 'Area not found', sections: [] };
-      return {
-        title: a.title,
-        titleNode: <InlineTitle value={a.title} onSave={(title) => updateArea(a.id, { title })} />,
-        icon: '◼',
-        color: '#5b6b8c',
-        actions: <button className="btn subtle" onClick={() => deleteArea(a, ctx)}>Delete Area</button>,
-        sections: [
-          { key: 'todos', items: todos.filter((t) => shown(t) && t.areaId === a.id && !t.projectId).sort(byIndex) },
-          { key: 'projects', title: 'Projects', items: ctx.projects.filter((p) => p.areaId === a.id) },
-        ],
-        defaults: { areaId: a.id, start: 'anytime' },
-      };
-    }
-  }
-}
-
-/** Scheduled/deadline items show in Today even inside a Someday project (like Things). */
-function parentActiveOrScheduled(t: Task, ctx: Ctx) {
-  if (!t.projectId) return true;
-  const p = ctx.byId.get(t.projectId);
-  return !!p && alive(p) && p.status === 'open';
-}
-
-async function deleteArea(a: Area, ctx: Ctx) {
-  if (!confirm(`Delete area "${a.title}"? Its projects and to-dos are kept, just moved out of the area.`)) return;
-  await updateTasks(ctx.tasks.filter((t) => t.areaId === a.id).map((t) => t.id), { areaId: null });
-  await updateArea(a.id, { deleted: true });
-  ctx.open({ kind: 'today' });
-}
-
-// --- Sidebar ---------------------------------------------------------------
-
-function Sidebar({ view, ctx, onSettings }: { view: View; ctx: Ctx; onSettings: () => void }) {
-  const counts: Partial<Record<ListKind, number>> = {
-    inbox: ctx.tasks.filter((t) => t.kind === 'todo' && alive(t) && t.status === 'open' && t.start === 'inbox' && !t.startDate && !t.projectId && !t.areaId).length,
-    today: ctx.tasks.filter((t) => t.kind === 'todo' && alive(t) && t.status === 'open' && inToday(t, ctx.today) && parentActiveOrScheduled(t, ctx)).length,
-  };
-  const active = (v: View) => v.kind === view.kind && ('id' in v ? 'id' in view && v.id === view.id : true);
-  const projectsOf = (areaId: string | null) => ctx.projects.filter((p) => (p.areaId ?? null) === areaId);
-
-  const projectLink = (p: Task) => (
-    <button key={p.id} className={'nav-item project' + (active({ kind: 'project', id: p.id }) ? ' active' : '')} onClick={() => ctx.open({ kind: 'project', id: p.id })}>
-      <ProgressPie p={p} ctx={ctx} />
-      <span className="nav-label">{p.title || 'New Project'}</span>
-    </button>
-  );
-
-  return (
-    <nav className="sidebar">
-      <div className="nav-group">
-        {LISTS.map((l, i) => (
-          <div key={l.kind}>
-            {(i === 2 || i === 5) && <div className="nav-gap" />}
-            <button className={'nav-item' + (active({ kind: l.kind }) ? ' active' : '')} onClick={() => ctx.open({ kind: l.kind })}>
-              <span className="nav-icon" style={{ color: l.color }}>{l.icon}</span>
-              <span className="nav-label">{l.label}</span>
-              {!!counts[l.kind] && <span className="nav-count">{counts[l.kind]}</span>}
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="nav-group">{projectsOf(null).map(projectLink)}</div>
-      {ctx.areas.map((a) => (
-        <div className="nav-group" key={a.id}>
-          <button className={'nav-item area' + (active({ kind: 'area', id: a.id }) ? ' active' : '')} onClick={() => ctx.open({ kind: 'area', id: a.id })}>
-            <span className="nav-icon">◼</span>
-            <span className="nav-label">{a.title}</span>
-          </button>
-          {projectsOf(a.id).map(projectLink)}
-        </div>
-      ))}
-      <div className="sidebar-footer">
-        <button className="btn subtle" onClick={async () => {
-          const title = prompt('New project name');
-          if (title) ctx.open({ kind: 'project', id: await createTask({ kind: 'project', title, start: 'anytime' }) });
-        }}>＋ Project</button>
-        <button className="btn subtle" onClick={async () => {
-          const title = prompt('New area name');
-          if (title) ctx.open({ kind: 'area', id: await createArea(title) });
-        }}>＋ Area</button>
-        <div className="spacer" />
-        <SyncBadge onClick={onSettings} />
-      </div>
-    </nav>
-  );
-}
-
-function ProgressPie({ p, ctx }: { p: Task; ctx: Ctx }) {
-  const items = ctx.tasks.filter((t) => t.projectId === p.id && t.kind === 'todo' && alive(t));
-  const ratio = items.length ? items.filter((t) => t.status !== 'open').length / items.length : 0;
-  return <span className="pie" style={{ background: `conic-gradient(#3b82f6 ${ratio * 360}deg, transparent 0)` }} />;
-}
-
-function SyncBadge({ onClick }: { onClick: () => void }) {
-  const { state, lastError } = useSyncExternalStore(subscribeSync, getSyncState);
-  const label = { local: 'Local only', syncing: 'Syncing…', synced: 'Synced', offline: 'Offline', error: 'Sync error' }[state];
-  return (
-    <button className={'sync-badge ' + state} onClick={onClick} title={lastError || 'Sync settings'}>
-      <span className="dot" /> {label}
-    </button>
-  );
-}
-
-// --- Rows --------------------------------------------------------------------
-
-function Check({ t }: { t: Task }) {
-  const done = t.status !== 'open';
-  return (
-    <button
-      className={'check' + (done ? ' checked' : '') + (t.status === 'canceled' ? ' canceled' : '')}
-      aria-label={done ? 'Mark as open' : 'Complete'}
-      onClick={(e) => {
-        e.stopPropagation();
-        void updateTask(t.id, done ? { status: 'open', completedAt: null } : { status: 'done', completedAt: Date.now() });
-      }}
-    />
-  );
-}
-
-function TaskRow({ t, ctx, view, expanded, onExpand }: { t: Task; ctx: Ctx; view: View; expanded: boolean; onExpand: (id: string | null) => void }) {
-  if (expanded) return <TaskEditor t={t} ctx={ctx} onClose={() => onExpand(null)} />;
-  const project = t.projectId ? ctx.byId.get(t.projectId) : undefined;
-  const area = t.areaId ? ctx.areas.find((a) => a.id === t.areaId) : undefined;
-  const showParent = view.kind !== 'project' && view.kind !== 'area';
-  const showDate = t.startDate && !['today', 'upcoming'].includes(view.kind) && view.kind !== 'logbook';
-  const clDone = t.checklist.filter((c) => c.done).length;
-  const repeating = !!t.repeat || isRepeatingInstance(t, ctx);
-  return (
-    <div
-      className={'task' + (t.status !== 'open' ? ' done' : '') + (t.ghost ? ' ghost' : '')}
-      // A projected copy opens its template (listed under "Repeating").
-      onClick={() => onExpand(t.ghost ? t.templateId! : t.id)}
-    >
-      {t.repeat || t.ghost ? <span className="repeat-icon" title="Repeating">↻</span> : <Check t={t} />}
-      <div className="task-body">
-        <div className="task-line">
-          {view.kind === 'anytime' && inToday(t, ctx.today) && <span className="star">★</span>}
-          {showDate && <span className="date-chip">{dayLabel(t.startDate!)}</span>}
-          <span className={'task-title' + (t.title ? '' : ' placeholder')}>{t.title || 'New To-Do'}</span>
-          {repeating && !t.repeat && !t.ghost && <span className="icon-hint" title="Repeating">↻</span>}
-          {t.notes && <span className="icon-hint" title="Has notes">≡</span>}
-          {t.checklist.length > 0 && <span className="icon-hint">{clDone}/{t.checklist.length}</span>}
-          {t.tagIds.map((id) => ctx.tagById.get(id)).filter((x) => x && !x.deleted).map((tag) => (
-            <span key={tag!.id} className="tag">{tag!.title}</span>
-          ))}
-          <span className="spacer" />
-          {t.deadline && t.status === 'open' && (
-            <span className={'deadline' + (t.deadline <= ctx.today ? ' overdue' : '')}>⚑ {daysLeft(t.deadline)}</span>
-          )}
-          {view.kind === 'trash' && (
-            <button className="btn subtle small" onClick={(e) => { e.stopPropagation(); void updateTask(t.id, { trashed: false }); }}>Restore</button>
-          )}
-        </div>
-        {t.repeat && <div className="task-parent">↻ {describe(t.repeat)}</div>}
-        {showParent && !t.repeat && (project || area) && <div className="task-parent">{project?.title ?? area?.title}</div>}
-      </div>
-    </div>
-  );
-}
-
-function liveTemplate(t: Task, ctx: Ctx) {
-  const tpl = t.repeat ? t : t.templateId ? ctx.byId.get(t.templateId) : undefined;
-  return tpl?.repeat && !tpl.trashed && !tpl.deleted ? tpl : undefined;
-}
-const isRepeatingInstance = (t: Task, ctx: Ctx) => !t.repeat && !!liveTemplate(t, ctx);
-
-function ProjectRow({ p, ctx }: { p: Task; ctx: Ctx }) {
-  return (
-    <div
-      className={'task project-row' + (p.status !== 'open' ? ' done' : '') + (p.ghost ? ' ghost' : '')}
-      onClick={() => ctx.open({ kind: 'project', id: p.ghost ? p.templateId! : p.id })}
-    >
-      {p.repeat || p.ghost ? <span className="repeat-icon">↻</span> : <ProgressPie p={p} ctx={ctx} />}
-      <div className="task-body">
-        <div className="task-line">
-          <span className="task-title">{p.title || 'New Project'}</span>
-          {isRepeatingInstance(p, ctx) && <span className="icon-hint" title="Repeating">↻</span>}
-          <span className="spacer" />
-          {p.deadline && p.status === 'open' && <span className={'deadline' + (p.deadline <= ctx.today ? ' overdue' : '')}>⚑ {daysLeft(p.deadline)}</span>}
-          {p.trashed && (
-            <button className="btn subtle small" onClick={(e) => { e.stopPropagation(); void restoreProject(p, ctx); }}>Restore</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeadingRow({ h, onAdd }: { h: Task; onAdd: () => void }) {
-  return (
-    <div className="heading-row">
-      <InlineTitle value={h.title} placeholder="Heading" onSave={(title) => updateTask(h.id, { title })} small />
-      <button className="btn subtle small" onClick={onAdd} title="Add to-do under this heading">＋</button>
-      <button className="btn subtle small" title="Delete heading (keeps its to-dos)" onClick={async () => {
-        const ids = (await db.tasks.where('projectId').equals(h.projectId ?? '').toArray()).filter((t) => t.headingId === h.id).map((t) => t.id);
-        await updateTasks(ids, { headingId: null });
-        await updateTask(h.id, { trashed: true });
-      }}>×</button>
-    </div>
-  );
-}
-
-// --- Editors -------------------------------------------------------------------
-
-function useOutsideClick(ref: React.RefObject<HTMLElement | null>, onOutside: () => void) {
-  const cb = useRef(onOutside);
-  cb.current = onOutside;
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const el = e.target as HTMLElement;
-      if (ref.current && !ref.current.contains(el) && !el.closest('.task, .fab, .modal')) cb.current();
-    };
-    const id = setTimeout(() => document.addEventListener('click', handler));
-    return () => { clearTimeout(id); document.removeEventListener('click', handler); };
-  }, [ref]);
-}
-
-function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [title, setTitle] = useState(t.title);
-  const [notes, setNotes] = useState(t.notes);
-  const latest = useRef({ title, notes, t });
-  latest.current = { title, notes, t };
-  useOutsideClick(ref, onClose);
-
-  // Persist on unmount (closing, switching task, navigating away).
-  useEffect(() => () => {
-    const { title, notes, t } = latest.current;
-    if (title !== t.title || notes !== t.notes) void updateTask(t.id, { title, notes });
-  }, []);
-
-  const commit = () => {
-    if (title !== t.title || notes !== t.notes) void updateTask(t.id, { title, notes });
-  };
-
-  return (
-    <div className="task editor" ref={ref}>
-      <div className="task-line">
-        {t.repeat ? <span className="repeat-icon">↻</span> : <Check t={t} />}
-        <input
-          className="title-input"
-          autoFocus={!t.title}
-          placeholder="New To-Do"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === 'Enter') { commit(); onClose(); } }}
-        />
-      </div>
-      <AutoTextarea className="notes-input" placeholder="Notes" value={notes} onChange={setNotes} onBlur={commit} />
-      <Checklist t={t} />
-      <TagPicker t={t} ctx={ctx} />
-      {t.repeat && <p className="muted repeat-note">Template: changes apply to future copies.</p>}
-      <RepeatPicker t={t} ctx={ctx} />
-      <div className="editor-bar">
-        {!t.repeat && <WhenPicker t={t} today={ctx.today} />}
-        {!t.repeat && (
-          <label className="field">
-            <span>⚑ Deadline</span>
-            <input type="date" value={t.deadline ?? ''} onChange={(e) => updateTask(t.id, { deadline: e.target.value || null })} />
-          </label>
-        )}
-        <MovePicker t={t} ctx={ctx} />
-        <span className="spacer" />
-        {t.status === 'open' && !t.repeat && (
-          <button className="btn subtle small" onClick={() => updateTask(t.id, { status: 'canceled', completedAt: Date.now() })}>Cancel to-do</button>
-        )}
-        <button className="btn subtle small danger" onClick={async () => {
-          if (t.repeat) {
-            if (!confirm('Stop repeating? Copies already created are kept.')) return;
-            await stopRepeating(t.id, ctx.all);
-          } else await updateTask(t.id, { trashed: true });
-          onClose();
-        }}>{t.repeat ? 'Stop Repeating' : 'Delete'}</button>
-      </div>
-    </div>
-  );
-}
-
-function AutoTextarea({ value, onChange, onBlur, placeholder, className }: { value: string; onChange: (v: string) => void; onBlur?: () => void; placeholder?: string; className?: string }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
-  }, [value]);
-  return <textarea ref={ref} rows={1} className={className} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />;
-}
-
-// --- Repeat ----------------------------------------------------------------
-
-type RepeatKind = 'never' | 'day' | 'week' | 'month' | 'year' | 'after';
-
-/** Edits the repeat rule. On a copy it edits the template; on a plain to-do/project it converts it. */
-function RepeatPicker({ t, ctx }: { t: Task; ctx: Ctx }) {
-  const tpl = liveTemplate(t, ctx);
-  const rule = tpl?.repeat ?? null;
-  const set = (patch: Partial<RepeatRule>) => tpl && updateTask(tpl.id, { repeat: { ...rule!, ...patch } });
-  const kind: RepeatKind = !rule ? 'never' : rule.type === 'afterCompletion' ? 'after' : rule.unit;
-
-  const changeKind = async (k: RepeatKind) => {
-    if (k === 'never') {
-      if (tpl && confirm('Stop repeating? Copies already created are kept.')) await stopRepeating(tpl.id, ctx.all);
-    } else if (!tpl) {
-      const start = t.startDate && t.startDate >= ctx.today ? t.startDate : ctx.today;
-      await makeRepeating(t, defaultRule(k === 'after' ? 'day' : k, start, k === 'after'), ctx.all);
-    } else {
-      void set(k === 'after' ? { type: 'afterCompletion' } : { type: 'schedule', unit: k });
-    }
-  };
-  if (t.kind === 'heading') return null;
-
-  const num = (v: string, min = 1) => Math.max(min, Math.floor(Number(v)) || min);
-  const ends = rule?.endDate ? 'date' : rule?.count ? 'count' : 'never';
-  return (
-    <div className="repeat">
-      <label className="field">
-        <span>↻ Repeat</span>
-        <select value={kind} onChange={(e) => void changeKind(e.target.value as RepeatKind)}>
-          <option value="never">Never</option>
-          <option value="day">Daily</option>
-          <option value="week">Weekly</option>
-          <option value="month">Monthly</option>
-          <option value="year">Yearly</option>
-          <option value="after">After completion</option>
-        </select>
-      </label>
-      {rule && (
-        <>
-          <label className="field">
-            <span>every</span>
-            <input className="num" type="number" min={1} value={rule.every} onChange={(e) => set({ every: num(e.target.value) })} />
-            {rule.type === 'afterCompletion' ? (
-              <select value={rule.unit} onChange={(e) => set({ unit: e.target.value as RepeatRule['unit'] })}>
-                <option value="day">day(s)</option>
-                <option value="week">week(s)</option>
-                <option value="month">month(s)</option>
-                <option value="year">year(s)</option>
-              </select>
-            ) : (
-              <span>{rule.unit}(s)</span>
-            )}
-          </label>
-          {rule.type === 'schedule' && rule.unit === 'week' && (
-            <span className="weekdays">
-              {WEEKDAYS.map((w, i) => {
-                const on = rule.weekdays?.includes(i);
-                return (
-                  <button key={w} className={'tag' + (on ? ' on' : ' off')} onClick={() => {
-                    const next = on ? (rule.weekdays ?? []).filter((x) => x !== i) : [...(rule.weekdays ?? []), i];
-                    if (next.length) void set({ weekdays: next });
-                  }}>{w}</button>
-                );
-              })}
-            </span>
-          )}
-          {rule.type === 'schedule' && rule.unit === 'month' && (
-            <label className="field">
-              <span>on</span>
-              <select
-                value={rule.monthMode === 'weekday' ? `w:${rule.ordinal}` : `d:${rule.monthDay}`}
-                onChange={(e) => {
-                  const [mode, n] = e.target.value.split(':');
-                  void set(mode === 'w' ? { monthMode: 'weekday', ordinal: Number(n) } : { monthMode: 'day', monthDay: Number(n) });
-                }}
-              >
-                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={`d:${d}`}>the {ordinalLabel(d)}</option>)}
-                <option value="d:-1">the last day</option>
-                {[1, 2, 3, 4, -1].map((o) => <option key={o} value={`w:${o}`}>the {ordinalLabel(o)} …</option>)}
-              </select>
-              {rule.monthMode === 'weekday' && (
-                <select value={rule.weekday ?? 0} onChange={(e) => set({ weekday: Number(e.target.value) })}>
-                  {WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}
-                </select>
-              )}
-            </label>
-          )}
-          <label className="field">
-            <span>{rule.type === 'afterCompletion' ? 'first' : 'from'}</span>
-            <input type="date" value={rule.start} onChange={(e) => e.target.value && set({ start: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>ends</span>
-            <select value={ends} onChange={(e) => set(
-              e.target.value === 'date' ? { endDate: addDays(ctx.today, 30), count: null }
-                : e.target.value === 'count' ? { count: 10, endDate: null }
-                  : { endDate: null, count: null },
-            )}>
-              <option value="never">never</option>
-              <option value="date">on date</option>
-              <option value="count">after</option>
-            </select>
-            {ends === 'date' && <input type="date" value={rule.endDate ?? ''} onChange={(e) => e.target.value && set({ endDate: e.target.value })} />}
-            {ends === 'count' && <><input className="num" type="number" min={1} value={rule.count ?? 1} onChange={(e) => set({ count: num(e.target.value) })} /><span>times</span></>}
-          </label>
-          <label className="field">
-            <span>⚑ deadline</span>
-            <input
-              className="num"
-              type="number"
-              min={0}
-              placeholder="–"
-              value={rule.deadlineDays ?? ''}
-              onChange={(e) => set({ deadlineDays: e.target.value === '' ? null : num(e.target.value, 0) })}
-            />
-            <span>days after</span>
-          </label>
-          <span className="muted repeat-summary">{describe(rule)}</span>
-        </>
+    <AnimatePresence>
+      {pending && (
+        <motion.button
+          className="update-banner"
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 80, opacity: 0 }}
+          onClick={() => void applyUpdate()}
+        >
+          New version available · Tap to update
+        </motion.button>
       )}
-    </div>
-  );
-}
-
-type When = 'inbox' | 'today' | 'evening' | 'anytime' | 'someday' | 'date';
-
-function WhenPicker({ t, today }: { t: Task; today: string }) {
-  const current: When = t.startDate ? (t.startDate <= today ? (t.evening ? 'evening' : 'today') : 'date') : t.start;
-  const set = (w: When) => {
-    const patch: Record<When, Partial<Task>> = {
-      inbox: { start: 'inbox', startDate: null, evening: false },
-      today: { start: 'anytime', startDate: today, evening: false },
-      evening: { start: 'anytime', startDate: today, evening: true },
-      anytime: { start: 'anytime', startDate: null, evening: false },
-      someday: { start: 'someday', startDate: null, evening: false },
-      date: { start: 'anytime', startDate: addDays(today, 1), evening: false },
-    };
-    void updateTask(t.id, patch[w]);
-  };
-  return (
-    <label className="field">
-      <span>★ When</span>
-      <select value={current} onChange={(e) => set(e.target.value as When)}>
-        {t.kind === 'todo' && <option value="inbox">Inbox</option>}
-        <option value="today">Today</option>
-        <option value="evening">This Evening</option>
-        <option value="anytime">Anytime</option>
-        <option value="someday">Someday</option>
-        <option value="date">Date…</option>
-      </select>
-      {current === 'date' && (
-        <input type="date" value={t.startDate ?? ''} min={addDays(today, 1)} onChange={(e) => e.target.value && updateTask(t.id, { startDate: e.target.value })} />
-      )}
-    </label>
-  );
-}
-
-function MovePicker({ t, ctx }: { t: Task; ctx: Ctx }) {
-  const value = t.projectId ? `p:${t.projectId}` : t.areaId ? `a:${t.areaId}` : '';
-  const move = (v: string) => {
-    const start = t.start === 'inbox' && v ? 'anytime' : t.start;
-    if (v.startsWith('p:')) void updateTask(t.id, { projectId: v.slice(2), areaId: null, headingId: null, start });
-    else if (v.startsWith('a:')) void updateTask(t.id, { areaId: v.slice(2), projectId: null, headingId: null, start });
-    else void updateTask(t.id, { areaId: null, projectId: null, headingId: null });
-  };
-  return (
-    <label className="field">
-      <span>→ List</span>
-      <select value={value} onChange={(e) => move(e.target.value)}>
-        <option value="">— None —</option>
-        {ctx.projects.filter((p) => !p.areaId).map((p) => <option key={p.id} value={`p:${p.id}`}>{p.title}</option>)}
-        {ctx.areas.map((a) => (
-          <optgroup key={a.id} label={a.title}>
-            <option value={`a:${a.id}`}>{a.title}</option>
-            {ctx.projects.filter((p) => p.areaId === a.id).map((p) => <option key={p.id} value={`p:${p.id}`}>  {p.title}</option>)}
-          </optgroup>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Checklist({ t }: { t: Task }) {
-  const [draft, setDraft] = useState('');
-  const set = (checklist: Task['checklist']) => updateTask(t.id, { checklist });
-  return (
-    <div className="checklist">
-      {t.checklist.map((item) => (
-        <div className="cl-item" key={item.id}>
-          <button className={'check small' + (item.done ? ' checked' : '')} onClick={() => set(t.checklist.map((c) => (c.id === item.id ? { ...c, done: !c.done } : c)))} />
-          <input
-            className={item.done ? 'done' : ''}
-            defaultValue={item.title}
-            onBlur={(e) => e.target.value !== item.title && set(t.checklist.map((c) => (c.id === item.id ? { ...c, title: e.target.value } : c)))}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          />
-          <button className="btn subtle small" onClick={() => set(t.checklist.filter((c) => c.id !== item.id))}>×</button>
-        </div>
-      ))}
-      <input
-        className="cl-new"
-        placeholder="＋ Checklist item"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && draft.trim()) {
-            void set([...t.checklist, { id: uid(), title: draft.trim(), done: false }]);
-            setDraft('');
-          }
-        }}
-      />
-    </div>
-  );
-}
-
-function TagPicker({ t, ctx }: { t: Task; ctx: Ctx }) {
-  const [draft, setDraft] = useState('');
-  const toggle = (id: string) =>
-    updateTask(t.id, { tagIds: t.tagIds.includes(id) ? t.tagIds.filter((x) => x !== id) : [...t.tagIds, id] });
-  return (
-    <div className="tags">
-      {ctx.tags.map((tag) => (
-        <button key={tag.id} className={'tag' + (t.tagIds.includes(tag.id) ? ' on' : ' off')} onClick={() => toggle(tag.id)}>{tag.title}</button>
-      ))}
-      <input
-        className="tag-new"
-        placeholder="＋ tag"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={async (e) => {
-          if (e.key !== 'Enter' || !draft.trim()) return;
-          const name = draft.trim();
-          setDraft('');
-          const existing = ctx.tags.find((x) => x.title.toLowerCase() === name.toLowerCase());
-          const id = existing?.id ?? (await createTag(name));
-          if (!t.tagIds.includes(id)) void updateTask(t.id, { tagIds: [...t.tagIds, id] });
-        }}
-      />
-    </div>
-  );
-}
-
-function InlineTitle({ value, onSave, placeholder = 'Untitled', small }: { value: string; onSave: (v: string) => void; placeholder?: string; small?: boolean }) {
-  const [v, setV] = useState(value);
-  useEffect(() => setV(value), [value]);
-  return (
-    <input
-      className={small ? 'heading-input' : 'h1-input'}
-      value={v}
-      placeholder={placeholder}
-      onChange={(e) => setV(e.target.value)}
-      onBlur={() => v !== value && onSave(v)}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-    />
-  );
-}
-
-// --- Project -----------------------------------------------------------------
-
-function ProjectTitle({ p, done, total }: { p: Task; done: number; total: number }) {
-  const ratio = total ? done / total : 0;
-  return (
-    <>
-      <span className="pie big" style={{ background: `conic-gradient(#3b82f6 ${ratio * 360}deg, transparent 0)` }} />
-      <InlineTitle value={p.title} placeholder="New Project" onSave={(title) => updateTask(p.id, { title })} />
-    </>
-  );
-}
-
-async function restoreProject(p: Task, ctx: Ctx) {
-  await updateTasks([p.id, ...ctx.tasks.filter((t) => t.projectId === p.id && t.trashed).map((t) => t.id)], { trashed: false });
-}
-
-function ProjectHeader({ p, ctx, items, headings }: { p: Task; ctx: Ctx; items: Task[]; headings: Task[] }) {
-  const [notes, setNotes] = useState(p.notes);
-  useEffect(() => setNotes(p.notes), [p.notes]);
-  const open = items.filter((t) => t.status === 'open');
-  const isTemplate = !!p.repeat;
-  return (
-    <div className="project-header">
-      <AutoTextarea className="notes-input" placeholder="Notes" value={notes} onChange={setNotes} onBlur={() => notes !== p.notes && updateTask(p.id, { notes })} />
-      {isTemplate && <p className="muted repeat-note">Repeating project template: each copy gets these to-dos.</p>}
-      {!p.trashed && <RepeatPicker t={p} ctx={ctx} />}
-      <div className="editor-bar">
-        {!isTemplate && <WhenPicker t={p} today={ctx.today} />}
-        {!isTemplate && (
-          <label className="field">
-            <span>⚑ Deadline</span>
-            <input type="date" value={p.deadline ?? ''} onChange={(e) => updateTask(p.id, { deadline: e.target.value || null })} />
-          </label>
-        )}
-        <label className="field">
-          <span>◼ Area</span>
-          <select value={p.areaId ?? ''} onChange={(e) => updateTask(p.id, { areaId: e.target.value || null })}>
-            <option value="">— None —</option>
-            {ctx.areas.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-          </select>
-        </label>
-        <span className="spacer" />
-        <button className="btn subtle small" onClick={() => createTask({ kind: 'heading', title: '', projectId: p.id, start: 'anytime', index: Date.now() })}>＋ Heading</button>
-        {isTemplate ? null : p.status === 'open' ? (
-          <button className="btn small" onClick={async () => {
-            if (open.length && !confirm(`Complete project and its ${open.length} open to-do(s)?`)) return;
-            const now = Date.now();
-            await updateTasks([p.id, ...open.map((t) => t.id)], { status: 'done', completedAt: now });
-          }}>Complete Project</button>
-        ) : (
-          <button className="btn small" onClick={() => updateTask(p.id, { status: 'open', completedAt: null })}>Reopen</button>
-        )}
-        {p.trashed ? (
-          <button className="btn subtle small" onClick={() => restoreProject(p, ctx)}>Restore</button>
-        ) : isTemplate ? (
-          <button className="btn subtle small danger" onClick={async () => {
-            if (!confirm('Stop repeating? Copies already created are kept.')) return;
-            await stopRepeating(p.id, ctx.all);
-            ctx.open({ kind: 'upcoming' });
-          }}>Stop Repeating</button>
-        ) : (
-          <button className="btn subtle small danger" onClick={async () => {
-            if (!confirm(`Move project "${p.title}" and its to-dos to Trash?`)) return;
-            const children = [...items, ...headings].filter((t) => !t.trashed).map((t) => t.id);
-            await updateTasks([p.id, ...children], { trashed: true });
-            ctx.open({ kind: 'today' });
-          }}>Delete</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- Settings ----------------------------------------------------------------
-
-function Settings({ onClose }: { onClose: () => void }) {
-  const [url, setUrl] = useState('');
-  const [token, setToken] = useState('');
-  const { state, lastError } = useSyncExternalStore(subscribeSync, getSyncState);
-  useEffect(() => { void getConfig().then((c) => { setUrl(c.url); setToken(c.token); }); }, []);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Sync</h2>
-        <p className="muted">
-          Data lives on this device and syncs to your server.
-          {isNative ? ' Paste the setup link (https://server/#token=…) or fill both fields.' : ' Leave the URL empty when the app is served by the sync server itself.'}
-        </p>
-        <label className="stack">
-          <span>Server URL</span>
-          <input
-            placeholder="https://things.example.com"
-            value={url}
-            autoCapitalize="off"
-            autoCorrect="off"
-            onChange={(e) => {
-              // Accept a full setup link: https://server/#token=XXXX
-              const [base, hash] = e.target.value.split('#');
-              const t = new URLSearchParams(hash ?? '').get('token');
-              if (t) { setUrl(base.replace(/\/+$/, '')); setToken(t); } else setUrl(e.target.value);
-            }}
-          />
-        </label>
-        <label className="stack">
-          <span>Token</span>
-          <input type="password" placeholder="OPEN_THINGS_TOKEN" value={token} onChange={(e) => setToken(e.target.value)} />
-        </label>
-        <p className="muted">Status: {state}{lastError && ` — ${lastError}`}</p>
-        <p className="muted">
-          App version {APP_VERSION}{isNative ? ' (native)' : ''}
-          {isNative && <> · <button className="btn subtle small" onClick={() => void checkForUpdate()}>Check for updates</button></>}
-        </p>
-        {isNative && <UpdateStatus />}
-        <div className="modal-actions">
-          <button className="btn subtle danger" onClick={async () => {
-            if (!confirm('Erase all local data on this device? Unsynced changes are lost; synced data will be downloaded again.')) return;
-            await db.delete();
-            location.reload();
-          }}>Reset local data</button>
-          <span className="spacer" />
-          <button className="btn subtle" onClick={() => void syncNow()}>Sync now</button>
-          <button className="btn" onClick={async () => { await setConfig({ url, token }); onClose(); }}>Save</button>
-        </div>
-      </div>
-    </div>
+    </AnimatePresence>
   );
 }

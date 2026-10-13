@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { startSync, setConfig } from './sync';
 import { startUpdates, isNative } from './update';
+import { installBackHandlers } from './ui/back';
 import './styles.css';
 
 // One-tap device setup: open https://your-server/#token=XXXX
@@ -22,6 +23,7 @@ if (isNative) {
 }
 
 startSync();
+installBackHandlers();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
