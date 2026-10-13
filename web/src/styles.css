@@ -399,7 +399,9 @@ h1, h2, p { margin: 0; }
   place-items: center;
   background: #141416; /* = splash_bg in android/app/src/main/res/values/splash.xml */
 }
-.mascot { overflow: visible; }
+.splash-stage { position: relative; width: 120px; height: 120px; } /* mascot stays dead centre */
+.mascot { overflow: visible; display: block; }
+.splash .checkbox { position: absolute; left: 36px; top: calc(100% + 34px); overflow: visible; }
 
 /* ---------- Misc ---------- */
 .update-banner {
