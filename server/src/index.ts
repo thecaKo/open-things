@@ -54,9 +54,9 @@ function applySync(since: number, changes: Change[]) {
     for (const c of changes) {
       if (typeof c?.id !== 'string' || !TYPES.has(c.type) || typeof c.updatedAt !== 'number') continue;
       const cur = qGet.get(c.id) as Row | undefined;
-      if (cur && cur.updatedAt > c.updatedAt) {
-        rejected.push(cur); // client is stale: send it the winning version
-        continue;
+      if (cur && cur.updatedAt >= c.updatedAt) {
+        if (cur.updatedAt > c.updatedAt) rejected.push(cur); // client is stale: send it the winning version
+        continue; // same version already stored
       }
       qUpsert.run(c.id, c.type, JSON.stringify({ ...c.data, id: c.id, updatedAt: c.updatedAt }), c.updatedAt, ++seq);
       applied++;
