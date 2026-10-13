@@ -2,7 +2,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { LISTS, counts, search, listOf, type Ctx, type ListKind, type View } from '../model';
-import { getSyncState, subscribeSync } from '../sync';
+import { getSyncState, subscribeSync, LOCAL_ONLY } from '../sync';
 import type { Task } from '../db';
 import {
   InboxIcon, StarIcon, CalendarIcon, AnytimeIcon, SomedayIcon, LogbookIcon, TrashIcon, AreaIcon, SearchIcon, GearIcon, PlusIcon, CloseIcon,
@@ -93,7 +93,7 @@ export function Navigator({ view, ctx, onOpen, onSettings, onNewList, onFound }:
       <div className="nav-footer">
         <motion.button whileTap={{ scale: 0.95 }} className="text-btn" onClick={onNewList}><PlusIcon size={18} /> New List</motion.button>
         <span className="spacer" />
-        <SyncDot />
+        {!LOCAL_ONLY && <SyncDot />}
         <motion.button whileTap={{ scale: 0.9 }} className="icon-btn" onClick={onSettings} aria-label="Settings"><GearIcon size={20} /></motion.button>
       </div>
     </nav>

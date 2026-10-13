@@ -4,7 +4,10 @@ android {
     namespace = "app.openthings"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.openthings"
+        // -PotAppId / -PotAppName build a variant installable side by side (e.g. the
+        // local-only "Open Things Local"); defaults are the regular synced app.
+        applicationId(project.findProperty('otAppId') ?: "app.openthings")
+        manifestPlaceholders = [appLabel: project.findProperty('otAppName') ?: "Open Things"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // New native version on every build: the OTA updater discards downloaded web

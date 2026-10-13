@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc && vite build && node scripts/zip-bundle.mjs",
     "preview": "vite preview",
-    "apk": "npm run build && cap sync android && cd android && JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} ANDROID_HOME=${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools} ./gradlew assembleDebug -q && cp app/build/outputs/apk/debug/app-debug.apk ../../data/open-things.apk"
+    "apk": "npm run build && cap sync android && cd android && JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} ANDROID_HOME=${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools} ./gradlew assembleDebug -q && cp app/build/outputs/apk/debug/app-debug.apk ../../data/open-things.apk",
+    "apk:local": "tsc && vite build --mode localonly && cap sync android && cd android && JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21} ANDROID_HOME=${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools} ./gradlew assembleDebug -q -PotAppId=app.openthings.local '-PotAppName=Open Things Local' && cp app/build/outputs/apk/debug/app-debug.apk ../../data/open-things-local.apk"
   },
   "keywords": [],
   "author": "",

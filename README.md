@@ -71,6 +71,8 @@ The APK bundles the web app, so it works offline from the first launch. On launc
 - **UI or logic change:** `cd web && npm run build` on the machine serving `web/dist`. Phones pick it up automatically.
 - **Native change** (new plugin, permissions, icon): `cd web && npm run apk`, then copy `data/open-things.apk` to the server's `data/` dir and reinstall from `<server>/open-things.apk`.
 
+**Local-only variant to share:** `cd web && npm run apk:local` builds `data/open-things-local.apk`. It is a separate app, "Open Things Local" (`app.openthings.local`), and can be installed next to the synced one. It has no server or token built in (`web/.env.localonly`), so data stays on the device and there are no updates. It is safe to give to anyone.
+
 Building requires Java 21 and the Android SDK (`brew install openjdk@21 && brew install --cask android-commandlinetools`, then `sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"`). APKs are signed with the local debug key (`~/.android/debug.keystore`). Keep that file, because Android only accepts updates signed with the same key.
 
 ## macOS app (Electron)

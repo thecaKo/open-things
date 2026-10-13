@@ -1,7 +1,7 @@
 // Settings: read-only status. The sync server is built into the app (see sync.ts).
 import { useSyncExternalStore } from 'react';
 import { db } from '../db';
-import { getSyncState, subscribeSync, syncNow } from '../sync';
+import { getSyncState, subscribeSync, syncNow, LOCAL_ONLY } from '../sync';
 import { APP_VERSION, isApp, isDesktop, getUpdateStatus, subscribeUpdate, checkForUpdate } from '../update';
 import { Sheet, ActionList, Action } from './Sheet';
 
@@ -14,6 +14,12 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Sheet open={open} onClose={onClose} title="Settings" action={<button className="text-btn" onClick={onClose}>Done</button>}>
+      {LOCAL_ONLY ? (
+        <ActionList>
+          <Action label="Storage" detail="This device only" onClick={() => {}} />
+          <Action label="Version" detail={APP_VERSION} onClick={() => {}} />
+        </ActionList>
+      ) : (<>
       <ActionList>
         <Action label="Sync" detail={SYNC_LABEL[state] + (lastError ? ` · ${lastError}` : '')} onClick={() => void syncNow()} />
         <Action label="Server" detail={SERVER} onClick={() => void syncNow()} />
@@ -33,9 +39,12 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
         <Action label="Sync Now" onClick={() => void syncNow()} />
         {isApp && <Action label="Check for Updates" onClick={() => void checkForUpdate()} />}
       </ActionList>
+      </>)}
       <ActionList>
-        <Action danger label="Reset Local Data" onClick={async () => {
-          if (!confirm('Erase the data stored on this device? Everything synced is downloaded again from the server; unsynced changes are lost.')) return;
+        <Action danger label={LOCAL_ONLY ? 'Erase All Data' : 'Reset Local Data'} onClick={async () => {
+          if (!confirm(LOCAL_ONLY
+            ? 'Erase all your to-dos? They exist only on this device and cannot be recovered.'
+            : 'Erase the data stored on this device? Everything synced is downloaded again from the server; unsynced changes are lost.')) return;
           await db.delete();
           location.reload();
         }} />

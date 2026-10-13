@@ -32,6 +32,9 @@ const SERVER: SyncConfig = {
   url: (import.meta.env.VITE_SERVER_URL ?? '').replace(/\/+$/, ''),
   token: import.meta.env.VITE_SERVER_TOKEN ?? '',
 };
+/** Built without a server (npm run apk:local): data stays on this device. */
+export const LOCAL_ONLY = !SERVER.token;
+
 export async function getConfig(): Promise<SyncConfig> {
   return SERVER;
 }
