@@ -79,7 +79,8 @@ export function TaskRow({ t, ctx, view, expanded, onExpand }: {
   const evening = t.evening && t.startDate && t.startDate <= ctx.today;
 
   return (
-    <motion.div className="row-wrap" layout="position" {...rowMotion}>
+    // While expanded, don't clip: the card is wider than the row and has a shadow.
+    <motion.div className={'row-wrap' + (expanded ? ' expanded' : '')} layout="position" {...rowMotion}>
       {expanded ? (
         <TaskEditor t={t} ctx={ctx} onClose={() => onExpand(null)} />
       ) : (

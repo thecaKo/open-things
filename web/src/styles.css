@@ -11,7 +11,7 @@
   --press: rgba(0, 0, 0, 0.06);
   --active: rgba(41, 121, 255, 0.13);
   --check: #c4c4ca;
-  --shadow-card: 0 6px 24px rgba(0, 0, 0, 0.1), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.07), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
 
   --accent: #2979ff;
   --inbox: #1d8cf8;
@@ -52,7 +52,7 @@
     --press: rgba(255, 255, 255, 0.07);
     --active: rgba(41, 121, 255, 0.24);
     --check: #636366;
-    --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
     --accent: #3d8bff;
     --area: #98a2b6;
   }
@@ -199,6 +199,7 @@ h1, h2, p { margin: 0; }
 
 /* ---------- Rows ---------- */
 .row-wrap { position: relative; overflow: hidden; }
+.row-wrap.expanded { overflow: visible; z-index: 1; }
 .swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 6px; pointer-events: none; }
 .swipe-when { color: var(--upcoming); }
 .swipe-move { color: var(--accent); }
@@ -252,7 +253,7 @@ h1, h2, p { margin: 0; }
 .task-card {
   margin: 10px -12px 14px;
   padding: 14px 14px 10px;
-  border-radius: 14px;
+  border-radius: 22px;
   background: var(--card);
   box-shadow: var(--shadow-card);
 }
@@ -429,7 +430,7 @@ h1, h2, p { margin: 0; }
   .nav-group { margin: 6px 0 16px; }
   .search { height: 32px; border-radius: 8px; }
   .title-row h1, .h1-input { font-size: 26px; }
-  .task-card { margin: 8px -14px 12px; padding: 12px 14px 8px; border-radius: 10px; }
+  .task-card { margin: 8px -14px 12px; padding: 12px 14px 8px; border-radius: 14px; }
   .notes-input, .checklist, .card-tags, .card-note, .card-bar { padding-left: 31px; }
   .cl-item { min-height: 34px; }
   .chip { height: 26px; font-size: 13px; }

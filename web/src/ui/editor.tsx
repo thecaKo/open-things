@@ -30,7 +30,11 @@ export function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: ()
   // Persist on unmount (closing, switching task, navigating away).
   useEffect(() => () => {
     const { title, notes, t } = latest.current;
-    if (title !== t.title || notes !== t.notes) void updateTask(t.id, { title, notes });
+    // Like Things: a just-created to-do closed without any content is discarded.
+    const blank = !title.trim() && !notes.trim() && !t.checklist.length && !t.tagIds.length && !t.deadline;
+    if (blank && t.kind === 'todo' && !t.repeat && !t.templateId && Date.now() - t.createdAt < 30 * 60_000) {
+      void updateTask(t.id, { deleted: true });
+    } else if (title !== t.title || notes !== t.notes) void updateTask(t.id, { title, notes });
   }, []);
 
   // Tap outside the card closes it (sheets and other rows excluded).

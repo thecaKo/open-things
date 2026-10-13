@@ -43,7 +43,8 @@ export async function checkForUpdate() {
 
     const { bundles } = await CapacitorUpdater.list();
     const bundle =
-      bundles.find((b) => b.version === version && b.status === 'success') ??
+      // A downloaded-but-not-yet-applied bundle is 'pending': reuse it instead of re-downloading.
+      bundles.find((b) => b.version === version && (b.status === 'success' || b.status === 'pending')) ??
       (await CapacitorUpdater.download({ url: `${url}/bundle.zip`, version, checksum }));
     await CapacitorUpdater.next({ id: bundle.id }); // applied when the app goes to background
     ready = { id: bundle.id, version };
