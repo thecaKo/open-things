@@ -108,6 +108,12 @@ app.whenReady().then(() => {
   root = webRoot();
   protocol.handle('app', serve);
   ipcMain.handle('updates:download', downloadBundle);
+  // Window chrome (traffic lights, menus, native controls) follows the app's theme.
+  ipcMain.handle('theme:set', (_event, theme) => {
+    if (!['system', 'light', 'dark'].includes(theme)) return;
+    nativeTheme.themeSource = theme;
+    win?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#ffffff');
+  });
   ipcMain.handle('updates:apply', () => {
     root = webRoot();
     win?.webContents.reloadIgnoringCache();

@@ -36,26 +36,25 @@
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1c1c1e;
-    --bg2: #161618;
-    --card: #2c2c2e;
-    --sheet: #1c1c1e;
-    --fill: rgba(118, 118, 128, 0.24);
-    --text: #f2f2f7;
-    --muted: #8e8e93;
-    --line: rgba(84, 84, 88, 0.55);
-    --press: rgba(255, 255, 255, 0.07);
-    --active: rgba(41, 121, 255, 0.24);
-    --check: #636366;
-    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
-    --accent: #3d8bff;
-    --area: #98a2b6;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1c1c1e;
+  --bg2: #161618;
+  --card: #2c2c2e;
+  --sheet: #1c1c1e;
+  --fill: rgba(118, 118, 128, 0.24);
+  --text: #f2f2f7;
+  --muted: #8e8e93;
+  --line: rgba(84, 84, 88, 0.55);
+  --press: rgba(255, 255, 255, 0.07);
+  --active: rgba(41, 121, 255, 0.24);
+  --check: #636366;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+  --accent: #3d8bff;
+  --area: #98a2b6;
 }
 
 * { box-sizing: border-box; }
@@ -455,3 +454,44 @@ h1, h2, p { margin: 0; }
   .cal-day { height: 36px; font-size: 14px; }
   .form-row { min-height: 46px; font-size: 14px; }
 }
+
+/* ---------- Theme switch ---------- */
+/* The new theme is revealed by a growing circle (theme.ts animates the clip-path). */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { z-index: 1; }
+
+.segmented-control {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--fill);
+}
+.segmented-control button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border-radius: 9px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.segmented-control button.on { color: var(--text); }
+.segmented-thumb {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  z-index: -1;
+}
+:root[data-theme='dark'] .segmented-thumb { background: #48484c; }
+.settings-section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 16px 4px 8px; }
+.theme-toggle { position: relative; overflow: hidden; color: var(--muted); }

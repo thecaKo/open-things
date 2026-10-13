@@ -8,6 +8,7 @@ import {
   InboxIcon, StarIcon, CalendarIcon, AnytimeIcon, SomedayIcon, LogbookIcon, TrashIcon, AreaIcon, SearchIcon, GearIcon, PlusIcon, CloseIcon,
 } from './icons';
 import { ProgressPie } from './rows';
+import { ThemeToggle } from './theme-controls';
 
 export const LIST_ICON: Record<ListKind, { icon: (p: { size?: number }) => ReactNode; color: string }> = {
   inbox: { icon: InboxIcon, color: 'var(--inbox)' },
@@ -94,6 +95,7 @@ export function Navigator({ view, ctx, onOpen, onSettings, onNewList, onFound }:
         <motion.button whileTap={{ scale: 0.95 }} className="text-btn" onClick={onNewList}><PlusIcon size={18} /> New List</motion.button>
         <span className="spacer" />
         {!LOCAL_ONLY && <SyncDot />}
+        <ThemeToggle />
         <motion.button whileTap={{ scale: 0.9 }} className="icon-btn" onClick={onSettings} aria-label="Settings"><GearIcon size={20} /></motion.button>
       </div>
     </nav>

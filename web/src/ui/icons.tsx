@@ -80,3 +80,6 @@ export const NotesIcon = svg(<path d="M4 6h16M4 12h16M4 18h10" />);
 export const CheckIcon = svg(<path d="m5 12.5 4.5 4.5L19 7.5" />);
 export const ClockIcon = svg(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
 export const HeadingIcon = svg(<path d="M4 7h16M4 12h10" />);
+export const SunIcon = svg(<><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" /></>);
+export const MoonLineIcon = svg(<path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z" />);
+export const AutoThemeIcon = svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>);

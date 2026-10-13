@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('openThingsDesktop', {
   platform: process.platform,
   downloadUpdate: (opts) => ipcRenderer.invoke('updates:download', opts),
   applyUpdate: () => ipcRenderer.invoke('updates:apply'),
+  setTheme: (theme) => ipcRenderer.invoke('theme:set', theme), // 'system' | 'light' | 'dark'
 });

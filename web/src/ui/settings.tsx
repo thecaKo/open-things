@@ -4,6 +4,7 @@ import { db } from '../db';
 import { getSyncState, subscribeSync, syncNow, LOCAL_ONLY } from '../sync';
 import { APP_VERSION, isApp, isDesktop, getUpdateStatus, subscribeUpdate, checkForUpdate } from '../update';
 import { Sheet, ActionList, Action } from './Sheet';
+import { ThemeSegmented } from './theme-controls';
 
 const SERVER = (import.meta.env.VITE_SERVER_URL ?? '').replace(/^https?:\/\//, '') || 'this site';
 const SYNC_LABEL = { local: 'Not configured', syncing: 'Syncing…', synced: 'Up to date', offline: 'Offline', error: 'Error' };
@@ -14,6 +15,9 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Sheet open={open} onClose={onClose} title="Settings" action={<button className="text-btn" onClick={onClose}>Done</button>}>
+      <div className="settings-section-title">Appearance</div>
+      <ThemeSegmented />
+      <div className="settings-section-title">{LOCAL_ONLY ? 'Storage' : 'Sync'}</div>
       {LOCAL_ONLY ? (
         <ActionList>
           <Action label="Storage" detail="This device only" onClick={() => {}} />

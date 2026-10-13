@@ -4,6 +4,7 @@ import App from './App';
 import { startSync } from './sync';
 import { startUpdates, isApp, isDesktop } from './update';
 import { installBackHandlers } from './ui/back';
+import { initTheme } from './theme';
 import './styles.css';
 
 
@@ -20,6 +21,7 @@ if (isApp) {
 
 startSync();
 installBackHandlers();
+initTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
