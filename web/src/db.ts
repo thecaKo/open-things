@@ -36,6 +36,27 @@ export interface Task extends Base {
   index: number;
   trashed: boolean;
   createdAt: number;
+  // Repeating (Things: rt1_recurrenceRule / rt1_repeatingTemplate). A template is a
+  // hidden task holding the rule; instances are normal tasks pointing at it.
+  repeat?: RepeatRule | null;
+  templateId?: string | null;
+  occurrence?: string | null; // instance's scheduled date per the rule (YYYY-MM-DD)
+  ghost?: boolean; // UI only: projected future occurrence, never stored
+}
+
+export interface RepeatRule {
+  type: 'schedule' | 'afterCompletion';
+  unit: 'day' | 'week' | 'month' | 'year';
+  every: number;
+  weekdays?: number[]; // week: 0 = Sunday … 6 = Saturday
+  monthMode?: 'day' | 'weekday';
+  monthDay?: number; // 1…31, -1 = last day
+  ordinal?: number; // 1…4, -1 = last (monthMode 'weekday')
+  weekday?: number; // 0…6 (monthMode 'weekday')
+  start: string; // first occurrence / anchor (YYYY-MM-DD)
+  endDate?: string | null;
+  count?: number | null;
+  deadlineDays?: number | null; // each copy gets deadline = occurrence + N days
 }
 
 export interface Area extends Base {
@@ -76,6 +97,7 @@ let onLocalChange = () => {};
 export function setOnLocalChange(fn: () => void) {
   onLocalChange = fn;
 }
+export const notifyLocalChange = () => onLocalChange();
 
 const stamp = () => ({ updatedAt: Date.now(), dirty: 1 as const });
 

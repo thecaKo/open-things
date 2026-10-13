@@ -226,6 +226,18 @@ input[type='date'], select {
 .editor-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%; padding-top: 6px; border-top: 1px solid var(--line); }
 .field { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 
+/* ---------- Repeating ---------- */
+.task.ghost { opacity: 0.5; }
+.repeat-icon { width: 16px; flex-shrink: 0; text-align: center; color: var(--accent); font-size: 15px; line-height: 22px; }
+.repeat { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; width: 100%; padding-top: 6px; border-top: 1px solid var(--line); }
+.repeat .num { width: 52px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 13px; background: var(--bg); }
+.repeat .weekdays { display: flex; gap: 4px; }
+.repeat .weekdays .tag { font-size: 12px; padding: 1px 7px; }
+.repeat .weekdays .tag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.repeat-summary { width: 100%; }
+.repeat-note { margin: 0; padding-left: 26px; }
+.project-header .repeat-note { padding-left: 0; }
+
 /* ---------- Buttons ---------- */
 .btn {
   background: var(--accent);

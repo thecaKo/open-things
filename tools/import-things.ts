@@ -9,7 +9,10 @@
 //   start  0 inbox | 1 anytime | 2 someday
 //   startBucket 1 = This Evening
 //   startDate/deadline: packed int  (year << 16) | (month << 12) | (day << 7)
-// Recurring templates (rt1_*) are not imported yet.
+// Repeating templates (rows with rt1_recurrenceRule) are skipped, along with
+// their child to-dos: the rule is a binary plist (keys fu/fa/of/sr/ed/rc/tp/rrv,
+// seen in ThingsModel) whose unit encoding hasn't been verified against real data.
+// Copies already created by Things are imported as normal to-dos.
 import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,7 +50,9 @@ for (const r of all('SELECT uuid, title, status, task FROM TMChecklistItem ORDER
   checklistByTask.set(r.task, [...(checklistByTask.get(r.task) ?? []), { id: r.uuid, title: r.title ?? '', done: r.status !== 0 }]);
 }
 
-const rows = all('SELECT * FROM TMTask');
+const allRows = all('SELECT * FROM TMTask');
+const templateIds = new Set(allRows.filter((r) => r.rt1_recurrenceRule != null).map((r) => r.uuid));
+const rows = allRows.filter((r) => !templateIds.has(r.uuid) && !templateIds.has(r.project));
 const projectOfHeading = new Map(rows.filter((r) => r.type === 2).map((r) => [r.uuid, r.project]));
 
 const changes: { id: string; type: string; updatedAt: number; data: Record<string, unknown> }[] = [];
@@ -95,3 +100,4 @@ if (!res.ok) {
 }
 const body = (await res.json()) as { applied: number };
 console.log(`Imported ${body.applied} records (${rows.length} tasks/projects/headings).`);
+if (templateIds.size) console.log(`Skipped ${templateIds.size} repeating template(s): recreate their rules in Open Things.`);

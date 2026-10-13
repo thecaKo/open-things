@@ -20,6 +20,12 @@ A local-first to-do app modelled on Things 3, with self-hosted sync between macO
 | `TMChecklistItem` | `checklist[]` embedded |
 | `TMTaskTag` | `tagIds[]` |
 
+## Repeating to-dos and projects
+
+Same model as Things: a hidden template holds the rule (daily, weekly on chosen weekdays, monthly on a day or on the "2nd Tuesday", yearly, or N days/weeks/months after completion; optional end date, repeat count, and per-copy deadline). Copies are ordinary tasks with `templateId` and `occurrence`. Upcoming shows projected copies plus a "Repeating" section listing the rules.
+
+Copies are generated on each device from data alone. Ids are deterministic (`<template>:<date>`, or `<template>:#<n>` for after-completion), and generated records carry `updatedAt = 1`. So two devices creating the same copy converge, and real edits always win. Things' own repeating templates are not imported yet (see `tools/import-things.ts`).
+
 ## Sync
 
 Each device keeps a full local copy. On every edit (debounced), on focus, and when the server pushes an event (SSE), the client sends its dirty records and pulls everything after its last server `seq`. Conflicts are resolved **last-write-wins per record** by `updatedAt`, so the device clocks need to be roughly correct. Deletions are tombstones (`deleted: true`).
@@ -71,7 +77,6 @@ cd web && npm install && npm run dev                               # :5173, prox
 
 ## Roadmap
 
-- Repeating to-dos (Things `rt1_recurrenceRule`)
 - Drag-and-drop reordering, Quick Find, reminders/notifications
 - Native wrappers: Capacitor (Android APK) / Tauri (macOS), reusing `web/` as is
 - Field-level merge for conflicts

@@ -1,6 +1,7 @@
 // Sync engine: push dirty records, pull everything after our last server seq.
 // Triggers: local edits (debounced), server push (SSE), focus/online, and a timer.
 import { db, setOnLocalChange, type Base } from './db';
+import { runRepeats } from './repeat';
 
 export type SyncState = 'local' | 'syncing' | 'synced' | 'offline' | 'error';
 
@@ -58,8 +59,14 @@ export async function syncNow() {
 
 async function syncOnce() {
   const { url, token } = await getConfig();
-  if (!token) return setState('local');
-  if (!navigator.onLine) return setState('offline');
+  if (!token) {
+    setState('local');
+    return void runRepeats();
+  }
+  if (!navigator.onLine) {
+    setState('offline');
+    return void runRepeats(); // safe offline: generated copies never override synced data
+  }
   setState('syncing');
 
   const since = ((await db.meta.get('seq'))?.value as number) ?? 0;
@@ -79,7 +86,8 @@ async function syncOnce() {
     if (!res.ok) throw new Error(res.status === 401 ? 'Invalid token' : `HTTP ${res.status}`);
     body = await res.json();
   } catch (e) {
-    return setState(navigator.onLine ? 'error' : 'offline', String((e as Error).message ?? e));
+    setState(navigator.onLine ? 'error' : 'offline', String((e as Error).message ?? e));
+    return void runRepeats();
   }
 
   await db.transaction('rw', [db.tasks, db.areas, db.tags, db.meta], async () => {
@@ -99,6 +107,7 @@ async function syncOnce() {
     await db.meta.put({ key: 'seq', value: body.seq });
   });
   setState('synced');
+  void runRepeats(); // after pulling, so copies are generated from up-to-date data
 }
 
 let debounce: ReturnType<typeof setTimeout> | undefined;

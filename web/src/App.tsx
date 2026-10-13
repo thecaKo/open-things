@@ -2,17 +2,20 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   db, createTask, updateTask, updateTasks, createArea, updateArea, createTag, uid,
-  type Task, type Area, type Tag,
+  type Task, type Area, type Tag, type RepeatRule,
 } from './db';
 import { getSyncState, subscribeSync, syncNow, getConfig, setConfig } from './sync';
 import { todayStr, addDays, isToday, dayLabel, daysLeft, fmt } from './dates';
 import { APP_VERSION, isNative, getPendingUpdate, getUpdateStatus, subscribeUpdate, applyUpdate, checkForUpdate } from './update';
+import { runRepeats, occurrencesBetween, describe, defaultRule, makeRepeating, stopRepeating, WEEKDAYS, ordinalLabel } from './repeat';
 
 type ListKind = 'inbox' | 'today' | 'upcoming' | 'anytime' | 'someday' | 'logbook' | 'trash';
 type View = { kind: ListKind } | { kind: 'project'; id: string } | { kind: 'area'; id: string };
 
 interface Ctx {
-  tasks: Task[];
+  tasks: Task[]; // excludes repeating templates and their child to-dos
+  all: Task[]; // every non-deleted task, templates included
+  templates: Task[]; // active repeating templates
   byId: Map<string, Task>;
   areas: Area[];
   projects: Task[];
@@ -72,7 +75,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const tick = () => setToday(todayStr());
+    const tick = () => { setToday(todayStr()); void runRepeats(); };
     const id = setInterval(tick, 60_000);
     window.addEventListener('focus', tick);
     return () => { clearInterval(id); window.removeEventListener('focus', tick); };
@@ -86,10 +89,15 @@ export default function App() {
   };
 
   const ctx: Ctx = useMemo(() => {
-    const live = tasks.filter((t) => !t.deleted);
+    const all = tasks.filter((t) => !t.deleted);
+    const byId = new Map(all.map((t) => [t.id, t]));
+    const isTemplatePart = (t: Task) => !!t.repeat || (!!t.projectId && !!byId.get(t.projectId)?.repeat);
+    const live = all.filter((t) => !isTemplatePart(t));
     return {
       tasks: live,
-      byId: new Map(live.map((t) => [t.id, t])),
+      all,
+      templates: all.filter((t) => t.repeat && alive(t) && t.status === 'open').sort(byIndex),
+      byId,
       areas: areas.filter((a) => !a.deleted).sort(byIndex),
       projects: live.filter((t) => t.kind === 'project' && alive(t) && t.status === 'open').sort(byIndex),
       tags: tags.filter((t) => !t.deleted).sort((a, b) => a.title.localeCompare(b.title)),
@@ -231,10 +239,24 @@ function buildView(view: View, ctx: Ctx): ViewModel {
     }
     case 'upcoming': {
       const future = ctx.tasks.filter((t) => t.kind !== 'heading' && alive(t) && t.status === 'open' && t.startDate && t.startDate > today);
-      const days = [...new Set(future.map((t) => t.startDate!))].sort();
+      // Projected copies of fixed-schedule repeating items (not created until their day).
+      const horizon = addDays(today, 60);
+      const ghosts = ctx.templates
+        .filter((tpl) => tpl.repeat!.type === 'schedule')
+        .flatMap((tpl) => {
+          const made = new Set(ctx.all.filter((t) => t.templateId === tpl.id).map((t) => t.occurrence));
+          return occurrencesBetween(tpl.repeat!, today, horizon, 8)
+            .filter((d) => !made.has(d))
+            .map((d): Task => ({ ...tpl, id: `ghost:${tpl.id}:${d}`, startDate: d, templateId: tpl.id, repeat: null, ghost: true }));
+        });
+      const items = [...future, ...ghosts];
+      const days = [...new Set(items.map((t) => t.startDate!))].sort();
       return {
         ...base,
-        sections: days.map((d) => ({ key: d, title: dayLabel(d), items: future.filter((t) => t.startDate === d).sort(byIndex) })),
+        sections: [
+          ...days.map((d) => ({ key: d, title: dayLabel(d), items: items.filter((t) => t.startDate === d).sort(byIndex) })),
+          ...(ctx.templates.length ? [{ key: 'repeating', title: 'Repeating', items: ctx.templates }] : []),
+        ],
         defaults: { start: 'anytime', startDate: addDays(today, 1) },
         empty: 'Nothing scheduled.',
       };
@@ -277,12 +299,12 @@ function buildView(view: View, ctx: Ctx): ViewModel {
       };
     }
     case 'trash': {
-      const trashed = ctx.tasks.filter((t) => t.trashed && t.kind !== 'heading');
+      const trashed = ctx.all.filter((t) => t.trashed && t.kind !== 'heading' && !(t.projectId && ctx.byId.get(t.projectId)?.trashed));
       return {
         ...base,
         sections: [{ key: 't', items: trashed.sort((a, b) => b.updatedAt - a.updatedAt) }],
         actions: trashed.length > 0 && (
-          <button className="btn" onClick={() => confirm('Permanently delete all items in Trash?') && updateTasks(ctx.tasks.filter((t) => t.trashed).map((t) => t.id), { deleted: true })}>
+          <button className="btn" onClick={() => confirm('Permanently delete all items in Trash?') && updateTasks(ctx.all.filter((t) => t.trashed).map((t) => t.id), { deleted: true })}>
             Empty Trash
           </button>
         ),
@@ -292,7 +314,7 @@ function buildView(view: View, ctx: Ctx): ViewModel {
     case 'project': {
       const p = ctx.byId.get(view.id);
       if (!p || p.deleted) return { title: 'Project not found', sections: [] };
-      const children = ctx.tasks.filter((t) => t.projectId === p.id && !t.deleted && (p.trashed || !t.trashed));
+      const children = ctx.all.filter((t) => t.projectId === p.id && (p.trashed || !t.trashed));
       const items = children.filter((t) => t.kind === 'todo');
       const headings = children.filter((t) => t.kind === 'heading').sort(byIndex);
       const visible = (t: Task) => shown(t) && t.kind === 'todo';
@@ -445,14 +467,20 @@ function TaskRow({ t, ctx, view, expanded, onExpand }: { t: Task; ctx: Ctx; view
   const showParent = view.kind !== 'project' && view.kind !== 'area';
   const showDate = t.startDate && !['today', 'upcoming'].includes(view.kind) && view.kind !== 'logbook';
   const clDone = t.checklist.filter((c) => c.done).length;
+  const repeating = !!t.repeat || isRepeatingInstance(t, ctx);
   return (
-    <div className={'task' + (t.status !== 'open' ? ' done' : '')} onClick={() => onExpand(t.id)}>
-      <Check t={t} />
+    <div
+      className={'task' + (t.status !== 'open' ? ' done' : '') + (t.ghost ? ' ghost' : '')}
+      // A projected copy opens its template (listed under "Repeating").
+      onClick={() => onExpand(t.ghost ? t.templateId! : t.id)}
+    >
+      {t.repeat || t.ghost ? <span className="repeat-icon" title="Repeating">↻</span> : <Check t={t} />}
       <div className="task-body">
         <div className="task-line">
           {view.kind === 'anytime' && inToday(t, ctx.today) && <span className="star">★</span>}
           {showDate && <span className="date-chip">{dayLabel(t.startDate!)}</span>}
           <span className={'task-title' + (t.title ? '' : ' placeholder')}>{t.title || 'New To-Do'}</span>
+          {repeating && !t.repeat && !t.ghost && <span className="icon-hint" title="Repeating">↻</span>}
           {t.notes && <span className="icon-hint" title="Has notes">≡</span>}
           {t.checklist.length > 0 && <span className="icon-hint">{clDone}/{t.checklist.length}</span>}
           {t.tagIds.map((id) => ctx.tagById.get(id)).filter((x) => x && !x.deleted).map((tag) => (
@@ -466,19 +494,30 @@ function TaskRow({ t, ctx, view, expanded, onExpand }: { t: Task; ctx: Ctx; view
             <button className="btn subtle small" onClick={(e) => { e.stopPropagation(); void updateTask(t.id, { trashed: false }); }}>Restore</button>
           )}
         </div>
-        {showParent && (project || area) && <div className="task-parent">{project?.title ?? area?.title}</div>}
+        {t.repeat && <div className="task-parent">↻ {describe(t.repeat)}</div>}
+        {showParent && !t.repeat && (project || area) && <div className="task-parent">{project?.title ?? area?.title}</div>}
       </div>
     </div>
   );
 }
 
+function liveTemplate(t: Task, ctx: Ctx) {
+  const tpl = t.repeat ? t : t.templateId ? ctx.byId.get(t.templateId) : undefined;
+  return tpl?.repeat && !tpl.trashed && !tpl.deleted ? tpl : undefined;
+}
+const isRepeatingInstance = (t: Task, ctx: Ctx) => !t.repeat && !!liveTemplate(t, ctx);
+
 function ProjectRow({ p, ctx }: { p: Task; ctx: Ctx }) {
   return (
-    <div className={'task project-row' + (p.status !== 'open' ? ' done' : '')} onClick={() => ctx.open({ kind: 'project', id: p.id })}>
-      <ProgressPie p={p} ctx={ctx} />
+    <div
+      className={'task project-row' + (p.status !== 'open' ? ' done' : '') + (p.ghost ? ' ghost' : '')}
+      onClick={() => ctx.open({ kind: 'project', id: p.ghost ? p.templateId! : p.id })}
+    >
+      {p.repeat || p.ghost ? <span className="repeat-icon">↻</span> : <ProgressPie p={p} ctx={ctx} />}
       <div className="task-body">
         <div className="task-line">
           <span className="task-title">{p.title || 'New Project'}</span>
+          {isRepeatingInstance(p, ctx) && <span className="icon-hint" title="Repeating">↻</span>}
           <span className="spacer" />
           {p.deadline && p.status === 'open' && <span className={'deadline' + (p.deadline <= ctx.today ? ' overdue' : '')}>⚑ {daysLeft(p.deadline)}</span>}
           {p.trashed && (
@@ -540,7 +579,7 @@ function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: () => voi
   return (
     <div className="task editor" ref={ref}>
       <div className="task-line">
-        <Check t={t} />
+        {t.repeat ? <span className="repeat-icon">↻</span> : <Check t={t} />}
         <input
           className="title-input"
           autoFocus={!t.title}
@@ -554,18 +593,28 @@ function TaskEditor({ t, ctx, onClose }: { t: Task; ctx: Ctx; onClose: () => voi
       <AutoTextarea className="notes-input" placeholder="Notes" value={notes} onChange={setNotes} onBlur={commit} />
       <Checklist t={t} />
       <TagPicker t={t} ctx={ctx} />
+      {t.repeat && <p className="muted repeat-note">Template: changes apply to future copies.</p>}
+      <RepeatPicker t={t} ctx={ctx} />
       <div className="editor-bar">
-        <WhenPicker t={t} today={ctx.today} />
-        <label className="field">
-          <span>⚑ Deadline</span>
-          <input type="date" value={t.deadline ?? ''} onChange={(e) => updateTask(t.id, { deadline: e.target.value || null })} />
-        </label>
+        {!t.repeat && <WhenPicker t={t} today={ctx.today} />}
+        {!t.repeat && (
+          <label className="field">
+            <span>⚑ Deadline</span>
+            <input type="date" value={t.deadline ?? ''} onChange={(e) => updateTask(t.id, { deadline: e.target.value || null })} />
+          </label>
+        )}
         <MovePicker t={t} ctx={ctx} />
         <span className="spacer" />
-        {t.status === 'open' && (
+        {t.status === 'open' && !t.repeat && (
           <button className="btn subtle small" onClick={() => updateTask(t.id, { status: 'canceled', completedAt: Date.now() })}>Cancel to-do</button>
         )}
-        <button className="btn subtle small danger" onClick={() => { void updateTask(t.id, { trashed: true }); onClose(); }}>Delete</button>
+        <button className="btn subtle small danger" onClick={async () => {
+          if (t.repeat) {
+            if (!confirm('Stop repeating? Copies already created are kept.')) return;
+            await stopRepeating(t.id, ctx.all);
+          } else await updateTask(t.id, { trashed: true });
+          onClose();
+        }}>{t.repeat ? 'Stop Repeating' : 'Delete'}</button>
       </div>
     </div>
   );
@@ -578,6 +627,131 @@ function AutoTextarea({ value, onChange, onBlur, placeholder, className }: { val
     if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
   }, [value]);
   return <textarea ref={ref} rows={1} className={className} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />;
+}
+
+// --- Repeat ----------------------------------------------------------------
+
+type RepeatKind = 'never' | 'day' | 'week' | 'month' | 'year' | 'after';
+
+/** Edits the repeat rule. On a copy it edits the template; on a plain to-do/project it converts it. */
+function RepeatPicker({ t, ctx }: { t: Task; ctx: Ctx }) {
+  const tpl = liveTemplate(t, ctx);
+  const rule = tpl?.repeat ?? null;
+  const set = (patch: Partial<RepeatRule>) => tpl && updateTask(tpl.id, { repeat: { ...rule!, ...patch } });
+  const kind: RepeatKind = !rule ? 'never' : rule.type === 'afterCompletion' ? 'after' : rule.unit;
+
+  const changeKind = async (k: RepeatKind) => {
+    if (k === 'never') {
+      if (tpl && confirm('Stop repeating? Copies already created are kept.')) await stopRepeating(tpl.id, ctx.all);
+    } else if (!tpl) {
+      const start = t.startDate && t.startDate >= ctx.today ? t.startDate : ctx.today;
+      await makeRepeating(t, defaultRule(k === 'after' ? 'day' : k, start, k === 'after'), ctx.all);
+    } else {
+      void set(k === 'after' ? { type: 'afterCompletion' } : { type: 'schedule', unit: k });
+    }
+  };
+  if (t.kind === 'heading') return null;
+
+  const num = (v: string, min = 1) => Math.max(min, Math.floor(Number(v)) || min);
+  const ends = rule?.endDate ? 'date' : rule?.count ? 'count' : 'never';
+  return (
+    <div className="repeat">
+      <label className="field">
+        <span>↻ Repeat</span>
+        <select value={kind} onChange={(e) => void changeKind(e.target.value as RepeatKind)}>
+          <option value="never">Never</option>
+          <option value="day">Daily</option>
+          <option value="week">Weekly</option>
+          <option value="month">Monthly</option>
+          <option value="year">Yearly</option>
+          <option value="after">After completion</option>
+        </select>
+      </label>
+      {rule && (
+        <>
+          <label className="field">
+            <span>every</span>
+            <input className="num" type="number" min={1} value={rule.every} onChange={(e) => set({ every: num(e.target.value) })} />
+            {rule.type === 'afterCompletion' ? (
+              <select value={rule.unit} onChange={(e) => set({ unit: e.target.value as RepeatRule['unit'] })}>
+                <option value="day">day(s)</option>
+                <option value="week">week(s)</option>
+                <option value="month">month(s)</option>
+                <option value="year">year(s)</option>
+              </select>
+            ) : (
+              <span>{rule.unit}(s)</span>
+            )}
+          </label>
+          {rule.type === 'schedule' && rule.unit === 'week' && (
+            <span className="weekdays">
+              {WEEKDAYS.map((w, i) => {
+                const on = rule.weekdays?.includes(i);
+                return (
+                  <button key={w} className={'tag' + (on ? ' on' : ' off')} onClick={() => {
+                    const next = on ? (rule.weekdays ?? []).filter((x) => x !== i) : [...(rule.weekdays ?? []), i];
+                    if (next.length) void set({ weekdays: next });
+                  }}>{w}</button>
+                );
+              })}
+            </span>
+          )}
+          {rule.type === 'schedule' && rule.unit === 'month' && (
+            <label className="field">
+              <span>on</span>
+              <select
+                value={rule.monthMode === 'weekday' ? `w:${rule.ordinal}` : `d:${rule.monthDay}`}
+                onChange={(e) => {
+                  const [mode, n] = e.target.value.split(':');
+                  void set(mode === 'w' ? { monthMode: 'weekday', ordinal: Number(n) } : { monthMode: 'day', monthDay: Number(n) });
+                }}
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={`d:${d}`}>the {ordinalLabel(d)}</option>)}
+                <option value="d:-1">the last day</option>
+                {[1, 2, 3, 4, -1].map((o) => <option key={o} value={`w:${o}`}>the {ordinalLabel(o)} …</option>)}
+              </select>
+              {rule.monthMode === 'weekday' && (
+                <select value={rule.weekday ?? 0} onChange={(e) => set({ weekday: Number(e.target.value) })}>
+                  {WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}
+                </select>
+              )}
+            </label>
+          )}
+          <label className="field">
+            <span>{rule.type === 'afterCompletion' ? 'first' : 'from'}</span>
+            <input type="date" value={rule.start} onChange={(e) => e.target.value && set({ start: e.target.value })} />
+          </label>
+          <label className="field">
+            <span>ends</span>
+            <select value={ends} onChange={(e) => set(
+              e.target.value === 'date' ? { endDate: addDays(ctx.today, 30), count: null }
+                : e.target.value === 'count' ? { count: 10, endDate: null }
+                  : { endDate: null, count: null },
+            )}>
+              <option value="never">never</option>
+              <option value="date">on date</option>
+              <option value="count">after</option>
+            </select>
+            {ends === 'date' && <input type="date" value={rule.endDate ?? ''} onChange={(e) => e.target.value && set({ endDate: e.target.value })} />}
+            {ends === 'count' && <><input className="num" type="number" min={1} value={rule.count ?? 1} onChange={(e) => set({ count: num(e.target.value) })} /><span>times</span></>}
+          </label>
+          <label className="field">
+            <span>⚑ deadline</span>
+            <input
+              className="num"
+              type="number"
+              min={0}
+              placeholder="–"
+              value={rule.deadlineDays ?? ''}
+              onChange={(e) => set({ deadlineDays: e.target.value === '' ? null : num(e.target.value, 0) })}
+            />
+            <span>days after</span>
+          </label>
+          <span className="muted repeat-summary">{describe(rule)}</span>
+        </>
+      )}
+    </div>
+  );
 }
 
 type When = 'inbox' | 'today' | 'evening' | 'anytime' | 'someday' | 'date';
@@ -733,15 +907,20 @@ function ProjectHeader({ p, ctx, items, headings }: { p: Task; ctx: Ctx; items: 
   const [notes, setNotes] = useState(p.notes);
   useEffect(() => setNotes(p.notes), [p.notes]);
   const open = items.filter((t) => t.status === 'open');
+  const isTemplate = !!p.repeat;
   return (
     <div className="project-header">
       <AutoTextarea className="notes-input" placeholder="Notes" value={notes} onChange={setNotes} onBlur={() => notes !== p.notes && updateTask(p.id, { notes })} />
+      {isTemplate && <p className="muted repeat-note">Repeating project template: each copy gets these to-dos.</p>}
+      {!p.trashed && <RepeatPicker t={p} ctx={ctx} />}
       <div className="editor-bar">
-        <WhenPicker t={p} today={ctx.today} />
-        <label className="field">
-          <span>⚑ Deadline</span>
-          <input type="date" value={p.deadline ?? ''} onChange={(e) => updateTask(p.id, { deadline: e.target.value || null })} />
-        </label>
+        {!isTemplate && <WhenPicker t={p} today={ctx.today} />}
+        {!isTemplate && (
+          <label className="field">
+            <span>⚑ Deadline</span>
+            <input type="date" value={p.deadline ?? ''} onChange={(e) => updateTask(p.id, { deadline: e.target.value || null })} />
+          </label>
+        )}
         <label className="field">
           <span>◼ Area</span>
           <select value={p.areaId ?? ''} onChange={(e) => updateTask(p.id, { areaId: e.target.value || null })}>
@@ -751,7 +930,7 @@ function ProjectHeader({ p, ctx, items, headings }: { p: Task; ctx: Ctx; items: 
         </label>
         <span className="spacer" />
         <button className="btn subtle small" onClick={() => createTask({ kind: 'heading', title: '', projectId: p.id, start: 'anytime', index: Date.now() })}>＋ Heading</button>
-        {p.status === 'open' ? (
+        {isTemplate ? null : p.status === 'open' ? (
           <button className="btn small" onClick={async () => {
             if (open.length && !confirm(`Complete project and its ${open.length} open to-do(s)?`)) return;
             const now = Date.now();
@@ -762,6 +941,12 @@ function ProjectHeader({ p, ctx, items, headings }: { p: Task; ctx: Ctx; items: 
         )}
         {p.trashed ? (
           <button className="btn subtle small" onClick={() => restoreProject(p, ctx)}>Restore</button>
+        ) : isTemplate ? (
+          <button className="btn subtle small danger" onClick={async () => {
+            if (!confirm('Stop repeating? Copies already created are kept.')) return;
+            await stopRepeating(p.id, ctx.all);
+            ctx.open({ kind: 'upcoming' });
+          }}>Stop Repeating</button>
         ) : (
           <button className="btn subtle small danger" onClick={async () => {
             if (!confirm(`Move project "${p.title}" and its to-dos to Trash?`)) return;
