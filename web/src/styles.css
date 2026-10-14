@@ -498,73 +498,85 @@ h1, h2, p { margin: 0; }
 
 /* ---------- Ambient clock (Android) ---------- */
 .clock {
-  --clock-bg: #f6f3ef;
-  --clock-ink: #2b2a33;
-  --clock-soft: rgba(43, 42, 51, 0.5);
-  --glow-1: #ffcfb8;
-  --glow-2: #cdd5ff;
-  --glow-3: #c9efe2;
-  --glow-alpha: 0.85;
+  --clock-bg: #e8afcb;
+  --clock-ink: #141416;
+  --clock-soft: rgba(20, 20, 22, 0.6);
+  --clock-line: #141416;
+  --clock-blush: #ff7fb0;
+  --clock-blush-alpha: 0.75;
+  --clock-heart: #ff4f8b;
+  --mw: min(96vw, 80vh);
+  --mb: -0.3;
   position: fixed;
   inset: 0;
   z-index: 200;
-  display: grid;
-  place-items: center;
   overflow: hidden;
   background: var(--clock-bg);
   color: var(--clock-ink);
+  font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
   -webkit-user-select: none;
   user-select: none;
 }
 :root[data-theme='dark'] .clock {
-  --clock-bg: #0d0d12;
-  --clock-ink: #ecebf3;
-  --clock-soft: rgba(236, 235, 243, 0.45);
-  --glow-1: #5b3a6e;
-  --glow-2: #27406f;
-  --glow-3: #1f5a55;
-  --glow-alpha: 0.55;
+  --clock-bg: #2a1f2b;
+  --clock-ink: #f7eef6;
+  --clock-soft: rgba(247, 238, 246, 0.6);
+  --clock-blush: #c2628f;
+  --clock-blush-alpha: 0.4;
 }
-.clock-glow { position: absolute; inset: -20%; filter: blur(70px); opacity: var(--glow-alpha); }
-.clock-glow span { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; }
-.clock-glow .b1 { background: var(--glow-1); top: 0; left: -5%; animation: clock-drift-1 38s ease-in-out infinite alternate; }
-.clock-glow .b2 { background: var(--glow-2); bottom: -5%; right: -10%; animation: clock-drift-2 46s ease-in-out infinite alternate; }
-.clock-glow .b3 { background: var(--glow-3); top: 35%; left: 30%; width: 45vmax; height: 45vmax; animation: clock-drift-3 54s ease-in-out infinite alternate; }
-@keyframes clock-drift-1 { to { transform: translate(18vw, 22vh) scale(1.15); } }
-@keyframes clock-drift-2 { to { transform: translate(-22vw, -16vh) scale(0.9); } }
-@keyframes clock-drift-3 { to { transform: translate(-14vw, 10vh) scale(1.2); } }
 
-/* The face wanders a few pixels over minutes so nothing sits still on the panel. */
+/* Time on top (portrait) or on the left half (landscape), bold and rounded. */
 .clock-face {
-  position: relative;
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8vh);
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4vmin;
-  animation: clock-wander 180s ease-in-out infinite alternate;
+  gap: 2vh;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
 }
-@keyframes clock-wander { 0% { translate: -6px -4px; } 50% { translate: 5px 6px; } 100% { translate: 4px -6px; } }
 .clock-time {
   display: flex;
   align-items: center;
-  font-weight: 200;
-  font-size: min(27vw, 52vh);
-  line-height: 0.92;
-  letter-spacing: -0.02em;
+  font-size: min(30vw, 19vh);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum';
 }
 .clock-pair { display: flex; }
 .clock-digit { display: inline-grid; width: 0.6em; justify-items: center; overflow: visible; }
 .clock-digit > span { grid-area: 1 / 1; }
-.clock-colon { display: flex; flex-direction: column; gap: 0.2em; margin: 0 0.06em; animation: clock-breathe 2s ease-in-out infinite; }
-.clock-colon i { width: 0.07em; height: 0.07em; border-radius: 50%; background: currentColor; }
-@keyframes clock-breathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.25; } }
-.clock-meta { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.clock-date { font-size: clamp(15px, 2.6vmax, 22px); font-weight: 400; letter-spacing: 0.04em; color: var(--clock-soft); text-transform: lowercase; }
-.clock-seconds { width: clamp(80px, 16vmin, 140px); height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--clock-ink) 12%, transparent); overflow: hidden; }
-.clock-seconds span { display: block; height: 100%; border-radius: inherit; background: var(--clock-soft); transform-origin: left; transition: transform 1s linear; }
-.clock-seconds span.reset { transition: none; }
+.clock-colon { display: flex; flex-direction: column; gap: 0.26em; margin: 0 0.12em; padding-bottom: 0.04em; }
+.clock-colon i { width: 0.13em; height: 0.13em; border-radius: 50%; background: currentColor; }
+.clock-date { font-size: clamp(15px, 2.8vmin, 24px); font-weight: 700; letter-spacing: 0.02em; color: var(--clock-soft); }
+
+/* The mascot rises from the bottom edge; the bottom third sits off screen. */
+.clock-mascot {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mw) * var(--mb));
+  width: var(--mw);
+  aspect-ratio: 1;
+  translate: -50% 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.clock-breathe { width: 100%; height: 100%; transform-origin: 50% 100%; animation: clock-breathe 4.5s ease-in-out infinite; }
+.clock-breathe.sleep { animation-duration: 7s; }
+@keyframes clock-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.025, 0.975); } }
+.clock-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.clock-body { transform-box: fill-box; transform-origin: 50% 100%; }
+.clock-shape { fill: #fff; stroke: var(--clock-line); stroke-width: 4.5; }
+.clock-eye { fill: var(--clock-line); transform-box: fill-box; transform-origin: center; }
+.clock-line { fill: none; stroke: var(--clock-line); stroke-width: 4.5; stroke-linecap: round; }
+.clock-mouth { fill: none; stroke: var(--clock-line); stroke-width: 3; stroke-linecap: round; }
+.clock-blush { fill: var(--clock-blush); opacity: var(--clock-blush-alpha); }
+.clock-heart { opacity: 0; transform-box: fill-box; }
+.clock-heart path { fill: var(--clock-heart); }
+.clock-z { font-family: inherit; font-weight: 800; fill: var(--clock-ink); }
+
 .clock-close {
   position: absolute;
   top: max(18px, env(safe-area-inset-top));
@@ -575,18 +587,22 @@ h1, h2, p { margin: 0; }
   height: 44px;
   border-radius: 50%;
   color: var(--clock-ink);
-  background: color-mix(in srgb, var(--clock-ink) 8%, transparent);
+  background: color-mix(in srgb, var(--clock-ink) 10%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* Portrait: hours stacked over minutes, big and airy. */
+/* Portrait: the mascot sits higher; landscape: time on the left half, mascot on the right. */
 @media (orientation: portrait) {
-  .clock-time { flex-direction: column; font-size: min(46vw, 34vh); line-height: 0.88; }
-  .clock-colon { flex-direction: row; gap: 0.16em; margin: 0.06em 0 0.1em; }
-  .clock-face { gap: 6vmin; }
+  .clock { --mw: min(125vw, 66vh); --mb: -0.05; }
+}
+@media (orientation: landscape) {
+  .clock { --mw: min(44vw, 100vh); }
+  .clock-face { top: 0; bottom: 0; right: 50%; justify-content: center; }
+  .clock-time { font-size: min(16vw, 40vh); }
+  .clock-mascot { left: 75%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .clock-glow span, .clock-face, .clock-colon { animation: none; }
+  .clock-breathe { animation: none; }
 }
 .clock-btn { color: var(--muted); }

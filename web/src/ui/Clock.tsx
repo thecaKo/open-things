@@ -1,10 +1,10 @@
-// Ambient clock (Android app only): a full-screen, soft clock to leave on the
-// screen. Hours over minutes in portrait, side by side in landscape; drifting
-// pastel light behind, a slim seconds line, the date. The screen stays on while
-// it is open (Wake Lock) and the system bars are hidden. Tap to show the close
-// button; back closes it.
-import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+// Ambient clock (Android app only): a full-screen pastel clock with a bold time
+// and our mascot peeking up from the bottom edge. The mascot blinks, glances
+// around, breathes, hops each minute, sleeps at night and reacts to taps. The
+// screen stays on while it is open (Wake Lock) and the system bars are hidden.
+// Tap to show the close button; back closes it.
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, stagger, useAnimate, useReducedMotion } from 'motion/react';
 import { SystemBars } from '@capacitor/core';
 import { isNative } from '../update';
 import { useBack } from './back';
@@ -12,6 +12,10 @@ import { CloseIcon } from './icons';
 
 const HOUR12 = ['h11', 'h12'].includes(new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hourCycle ?? '');
 const pad = (n: number) => String(n).padStart(2, '0');
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const between = (a: number, b: number) => a + Math.random() * (b - a);
+const HEART = 'M0 5 C-7 0 -8 -5 -4 -7.5 C-2 -8.5 0 -7 0 -5 C0 -7 2 -8.5 4 -7.5 C8 -5 7 0 0 5 Z';
+const ZS = [[96, 2, 7], [104, -8, 9], [113, -20, 11]] as const;
 
 function useNow() {
   const [now, setNow] = useState(() => new Date());
@@ -71,6 +75,133 @@ const Pair = ({ v }: { v: string }) => (
   <span className="clock-pair"><Digit d={v[0]} /><Digit d={v[1]} /></span>
 );
 
+type Mood = 'open' | 'happy' | 'sleep';
+
+/** The mascot peeking up from the bottom edge, with a little idle life. */
+function Mascot({ asleep, minute }: { asleep: boolean; minute: number }) {
+  const [scope, animate] = useAnimate();
+  const reduce = useReducedMotion();
+  const [happy, setHappy] = useState(false);
+  const mood: Mood = happy ? 'happy' : asleep ? 'sleep' : 'open';
+  const moodRef = useRef(mood);
+  moodRef.current = mood;
+  const busy = useRef(false);
+  const happyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const turned = useRef(false);
+
+  const run = async (fn: () => unknown) => {
+    busy.current = true;
+    try { await fn(); } finally { busy.current = false; }
+  };
+  const blink = () => animate('.clock-eye', { scaleY: [1, 0.1, 1] }, { duration: 0.22, ease: 'easeInOut' });
+  const glance = async (x: number) => {
+    await animate('.clock-eyes', { x }, { duration: 0.35, ease: 'easeInOut' });
+    await wait(between(700, 1300));
+    await animate('.clock-eyes', { x: 0 }, { duration: 0.35, ease: 'easeInOut' });
+  };
+  const hop = () => animate('.clock-body', { y: [0, -12, 0], scaleY: [1, 1.03, 1] }, { duration: 0.5, ease: 'easeOut' });
+  const tilt = () => animate('.clock-body', { rotate: [0, -7, 0] }, { duration: 1.1, ease: 'easeInOut' });
+  const squish = () => animate('.clock-body', { scaleX: [1, 1.08, 0.97, 1], scaleY: [1, 0.88, 1.04, 1] }, { duration: 0.5, ease: 'easeOut' });
+  const heart = () => animate('.clock-heart', { y: [0, -26], opacity: [0, 1, 0], scale: [0.6, 1, 1] }, { duration: 1.6, ease: 'easeOut' });
+
+  // Happy eyes, a floating heart and a squish. Used by taps and random moments.
+  const cheer = () => {
+    setHappy(true);
+    clearTimeout(happyTimer.current);
+    happyTimer.current = setTimeout(() => setHappy(false), 1600);
+    if (reduce) return;
+    void heart();
+    void squish();
+  };
+
+  // Idle loop: a blink every few seconds, glances, and a bigger moment every 20-40s.
+  useEffect(() => {
+    if (reduce) return;
+    let alive = true;
+    void (async () => {
+      let moment = Date.now() + between(20000, 40000);
+      while (alive) {
+        await wait(between(2200, 4200));
+        if (!alive) break;
+        if (busy.current) continue;
+        if (Date.now() >= moment) {
+          moment = Date.now() + between(20000, 40000);
+          const r = Math.random();
+          if (r < 0.35) await run(hop);
+          else if (r < 0.7) cheer();
+          else await run(tilt);
+        } else if (moodRef.current === 'open') {
+          if (Math.random() < 0.6) await run(blink);
+          else await run(() => glance(Math.random() < 0.5 ? -4 : 4));
+        }
+      }
+    })();
+    return () => { alive = false; };
+  }, [reduce]);
+
+  // A little hop and an upward glance each time the minute turns.
+  useEffect(() => {
+    if (!turned.current) { turned.current = true; return; }
+    if (reduce) return;
+    void run(async () => {
+      if (moodRef.current === 'open') void animate('.clock-eyes', { y: [0, -3, 0] }, { duration: 0.8, ease: 'easeOut' });
+      await hop();
+    });
+  }, [minute]);
+
+  // Sleepy "z" letters drift up while it is night.
+  useEffect(() => {
+    if (!asleep || reduce) return;
+    const z = animate('.clock-z', { y: [0, -14], opacity: [0, 1, 0] }, { duration: 3, ease: 'easeInOut', repeat: Infinity, delay: stagger(1.1) });
+    return () => z.stop();
+  }, [asleep, reduce, animate]);
+
+  return (
+    <motion.div
+      className="clock-mascot"
+      initial={{ y: '45%' }}
+      animate={{ y: 0 }}
+      transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.25 }}
+      onClick={(e) => { e.stopPropagation(); cheer(); }}
+    >
+      <div className={asleep ? 'clock-breathe sleep' : 'clock-breathe'}>
+        <svg ref={scope} className="clock-svg" viewBox="0 0 120 120" role="img" aria-label="Open Things mascot">
+          <g className="clock-body">
+            <rect className="clock-shape" x="8" y="8" width="104" height="140" rx="34" />
+            <g className="clock-eyes">
+              {mood === 'open' && (
+                <>
+                  <ellipse className="clock-eye" cx="44" cy="54" rx="6.5" ry="10" />
+                  <ellipse className="clock-eye" cx="76" cy="54" rx="6.5" ry="10" />
+                </>
+              )}
+              {mood === 'sleep' && (
+                <>
+                  <path className="clock-line" d="M37 56 Q44 63 51 56" />
+                  <path className="clock-line" d="M69 56 Q76 63 83 56" />
+                </>
+              )}
+              {mood === 'happy' && (
+                <>
+                  <path className="clock-line" d="M37 58 Q44 46 51 58" />
+                  <path className="clock-line" d="M69 58 Q76 46 83 58" />
+                </>
+              )}
+            </g>
+            <ellipse className="clock-blush" cx="30" cy="74" rx="7" ry="4.5" />
+            <ellipse className="clock-blush" cx="90" cy="74" rx="7" ry="4.5" />
+            <path className="clock-mouth" d="M56 74 Q60 79 64 74" />
+          </g>
+          <g transform="translate(100 10)"><g className="clock-heart"><path d={HEART} /></g></g>
+          {asleep && ZS.map(([x, y, s], i) => (
+            <g key={i} transform={`translate(${x} ${y})`}><text className="clock-z" fontSize={s}>z</text></g>
+          ))}
+        </svg>
+      </div>
+    </motion.div>
+  );
+}
+
 export function ClockScreen({ onClose }: { onClose: () => void }) {
   const now = useNow();
   const [chrome, setChrome] = useState(false);
@@ -95,6 +226,7 @@ export function ClockScreen({ onClose }: { onClose: () => void }) {
   const minutes = pad(now.getMinutes());
   const date = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const meridiem = HOUR12 ? (h < 12 ? 'AM' : 'PM') : null;
+  const asleep = h >= 22 || h < 6;
 
   return (
     <motion.div
@@ -105,16 +237,10 @@ export function ClockScreen({ onClose }: { onClose: () => void }) {
       transition={{ duration: 0.5, ease: 'easeOut' }}
       onClick={() => setChrome((c) => !c)}
     >
-      <div className="clock-glow" aria-hidden>
-        <span className="b1" />
-        <span className="b2" />
-        <span className="b3" />
-      </div>
-
       <motion.div
         className="clock-face"
-        initial={{ scale: 0.96, opacity: 0, filter: 'blur(12px)' }}
-        animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
       >
         <div className="clock-time" role="timer" aria-label={`${hours}:${minutes}`}>
@@ -122,13 +248,10 @@ export function ClockScreen({ onClose }: { onClose: () => void }) {
           <span className="clock-colon" aria-hidden><i /><i /></span>
           <Pair v={minutes} />
         </div>
-        <div className="clock-meta">
-          <span className="clock-date">{date}{meridiem && <> · {meridiem}</>}</span>
-          <span className="clock-seconds" aria-hidden>
-            <span style={{ transform: `scaleX(${(now.getSeconds() + 1) / 60})` }} className={now.getSeconds() === 0 ? 'reset' : ''} />
-          </span>
-        </div>
+        <div className="clock-date">{date}{meridiem && <> · {meridiem}</>}</div>
       </motion.div>
+
+      <Mascot asleep={asleep} minute={now.getMinutes()} />
 
       <AnimatePresence>
         {chrome && (
