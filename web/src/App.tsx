@@ -6,7 +6,7 @@ import { todayStr } from './dates';
 import { isNative, isApp, getPendingUpdate, subscribeUpdate, applyUpdate } from './update';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { runRepeats } from './repeat';
-import { buildCtx, listOf, subscribeLinger, getLingerVersion, type View } from './model';
+import { buildCtx, buildView, listOf, subscribeLinger, getLingerVersion, type View } from './model';
 import { useBack } from './ui/back';
 import { useWide } from './ui/hooks';
 import { Splash } from './ui/Splash';
@@ -79,6 +79,10 @@ function App() {
   }, []);
 
   const ctx = useMemo(() => buildCtx(tasks ?? [], areas ?? [], tags ?? [], today), [tasks, areas, tags, today]);
+  const todayTodos = useMemo(
+    () => buildView({ kind: 'today' }, ctx).sections.flatMap((s) => s.items).filter((t) => t.status === 'open' && t.title.trim()).map((t) => t.title.trim()),
+    [ctx],
+  );
 
   // On wide screens the lists are always visible in the sidebar, so "home" means Today.
   const shownView: View = wide && view.kind === 'home' ? { kind: 'today' } : view;
@@ -171,7 +175,7 @@ function App() {
         </ActionList>
       </Sheet>
       <UpdateBanner />
-      <AnimatePresence>{clock && <ClockScreen key="clock" onClose={() => setClock(false)} />}</AnimatePresence>
+      <AnimatePresence>{clock && <ClockScreen key="clock" todos={todayTodos} onClose={() => setClock(false)} />}</AnimatePresence>
     </div>
   );
 }

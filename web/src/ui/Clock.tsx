@@ -2,7 +2,8 @@
 // and our mascot peeking up from the bottom edge. The mascot blinks, glances
 // around, breathes, hops each minute, sleeps at night and reacts to taps. The
 // screen stays on while it is open (Wake Lock) and the system bars are hidden.
-// Tap to show the close button; back closes it.
+// Tap to show the close button; back closes it. In landscape a speech bubble
+// above the mascot cycles through today's to-dos.
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, stagger, useAnimate, useReducedMotion } from 'motion/react';
 import { SystemBars } from '@capacitor/core';
@@ -74,6 +75,62 @@ function Digit({ d }: { d: string }) {
 const Pair = ({ v }: { v: string }) => (
   <span className="clock-pair"><Digit d={v[0]} /><Digit d={v[1]} /></span>
 );
+
+/** Today's to-dos in a speech bubble, one at a time (~3s each); long ones scroll to their end. */
+function TodoBubble({ items }: { items: string[] }) {
+  const [step, setStep] = useState(0);
+  if (!items.length) return null;
+  const text = items[step % items.length];
+  return (
+    <div className="clock-todos" onClick={(e) => e.stopPropagation()}>
+      <AnimatePresence mode="wait">
+        <TodoLine key={step} text={text} onDone={() => setStep((s) => s + 1)} />
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function TodoLine({ text, onDone }: { text: string; onDone: () => void }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const line = useRef<HTMLSpanElement>(null);
+  const done = useRef(onDone);
+  done.current = onDone;
+  const [scope, animate] = useAnimate();
+  const [long, setLong] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const overflow = line.current!.scrollWidth - box.current!.clientWidth;
+      setLong(overflow > 0);
+      await wait(1000); // read the start first
+      if (!alive) return;
+      if (overflow > 0) {
+        await animate(line.current!, { x: -overflow - 4 }, { duration: overflow / 50, ease: 'linear' });
+        await wait(1200);
+      } else {
+        await wait(2000);
+      }
+      if (alive) done.current();
+    })();
+    return () => { alive = false; };
+  }, [text, animate]);
+
+  return (
+    <motion.div
+      ref={scope}
+      className="clock-bubble"
+      initial={{ opacity: 0, y: 10, scale: 0.94, filter: 'blur(6px)' }}
+      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+      exit={{ opacity: 0, y: -8, scale: 0.97, filter: 'blur(6px)' }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <span ref={box} className={'clock-bubble-box' + (long ? ' long' : '')}>
+        <span ref={line} className="clock-bubble-text">{text}</span>
+      </span>
+    </motion.div>
+  );
+}
 
 type Mood = 'open' | 'happy' | 'sleep';
 
@@ -202,7 +259,7 @@ function Mascot({ asleep, minute }: { asleep: boolean; minute: number }) {
   );
 }
 
-export function ClockScreen({ onClose }: { onClose: () => void }) {
+export function ClockScreen({ todos, onClose }: { todos: string[]; onClose: () => void }) {
   const now = useNow();
   const [chrome, setChrome] = useState(false);
   useBack(true, onClose);
@@ -252,6 +309,7 @@ export function ClockScreen({ onClose }: { onClose: () => void }) {
       </motion.div>
 
       <Mascot asleep={asleep} minute={now.getMinutes()} />
+      <TodoBubble items={todos} />
 
       <AnimatePresence>
         {chrome && (

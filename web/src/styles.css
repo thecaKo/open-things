@@ -592,6 +592,40 @@ h1, h2, p { margin: 0; }
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* Speech bubble with today's to-dos above the mascot (landscape only). */
+.clock-todos { display: none; }
+.clock-bubble {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+  padding: 10px 18px;
+  border-radius: 20px;
+  background: #fff;
+  border: 3px solid var(--clock-line);
+  color: #141416;
+  font-size: clamp(15px, 4.6vh, 22px);
+  font-weight: 800;
+  line-height: 1.25;
+}
+.clock-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  translate: -50% 0;
+  rotate: 45deg;
+  background: #fff;
+  border: solid var(--clock-line);
+  border-width: 0 3px 3px 0;
+  border-bottom-right-radius: 3px;
+}
+.clock-bubble-box { min-width: 0; overflow: hidden; white-space: nowrap; }
+.clock-bubble-box.long { mask-image: linear-gradient(90deg, transparent, #000 10px, #000 calc(100% - 14px), transparent); }
+.clock-bubble-box.long .clock-bubble-text { padding: 0 6px; }
+.clock-bubble-text { display: inline-block; }
+
 /* Portrait: the mascot sits higher; landscape: time on the left half, mascot on the right. */
 @media (orientation: portrait) {
   .clock { --mw: min(125vw, 66vh); --mb: -0.05; }
@@ -601,6 +635,15 @@ h1, h2, p { margin: 0; }
   .clock-face { top: 0; bottom: 0; right: 50%; justify-content: center; }
   .clock-time { font-size: min(16vw, 40vh); }
   .clock-mascot { left: 75%; }
+  .clock-todos {
+    position: absolute;
+    left: 75%;
+    bottom: calc(var(--mw) * 0.64 + 22px);
+    width: 44vw;
+    translate: -50% 0;
+    display: flex;
+    justify-content: center;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .clock-breathe { animation: none; }
