@@ -495,3 +495,98 @@ h1, h2, p { margin: 0; }
 :root[data-theme='dark'] .segmented-thumb { background: #48484c; }
 .settings-section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 16px 4px 8px; }
 .theme-toggle { position: relative; overflow: hidden; color: var(--muted); }
+
+/* ---------- Ambient clock (Android) ---------- */
+.clock {
+  --clock-bg: #f6f3ef;
+  --clock-ink: #2b2a33;
+  --clock-soft: rgba(43, 42, 51, 0.5);
+  --glow-1: #ffcfb8;
+  --glow-2: #cdd5ff;
+  --glow-3: #c9efe2;
+  --glow-alpha: 0.85;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--clock-bg);
+  color: var(--clock-ink);
+  -webkit-user-select: none;
+  user-select: none;
+}
+:root[data-theme='dark'] .clock {
+  --clock-bg: #0d0d12;
+  --clock-ink: #ecebf3;
+  --clock-soft: rgba(236, 235, 243, 0.45);
+  --glow-1: #5b3a6e;
+  --glow-2: #27406f;
+  --glow-3: #1f5a55;
+  --glow-alpha: 0.55;
+}
+.clock-glow { position: absolute; inset: -20%; filter: blur(70px); opacity: var(--glow-alpha); }
+.clock-glow span { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; }
+.clock-glow .b1 { background: var(--glow-1); top: 0; left: -5%; animation: clock-drift-1 38s ease-in-out infinite alternate; }
+.clock-glow .b2 { background: var(--glow-2); bottom: -5%; right: -10%; animation: clock-drift-2 46s ease-in-out infinite alternate; }
+.clock-glow .b3 { background: var(--glow-3); top: 35%; left: 30%; width: 45vmax; height: 45vmax; animation: clock-drift-3 54s ease-in-out infinite alternate; }
+@keyframes clock-drift-1 { to { transform: translate(18vw, 22vh) scale(1.15); } }
+@keyframes clock-drift-2 { to { transform: translate(-22vw, -16vh) scale(0.9); } }
+@keyframes clock-drift-3 { to { transform: translate(-14vw, 10vh) scale(1.2); } }
+
+/* The face wanders a few pixels over minutes so nothing sits still on the panel. */
+.clock-face {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4vmin;
+  animation: clock-wander 180s ease-in-out infinite alternate;
+}
+@keyframes clock-wander { 0% { translate: -6px -4px; } 50% { translate: 5px 6px; } 100% { translate: 4px -6px; } }
+.clock-time {
+  display: flex;
+  align-items: center;
+  font-weight: 200;
+  font-size: min(27vw, 52vh);
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.clock-pair { display: flex; }
+.clock-digit { display: inline-grid; width: 0.6em; justify-items: center; overflow: visible; }
+.clock-digit > span { grid-area: 1 / 1; }
+.clock-colon { display: flex; flex-direction: column; gap: 0.2em; margin: 0 0.06em; animation: clock-breathe 2s ease-in-out infinite; }
+.clock-colon i { width: 0.07em; height: 0.07em; border-radius: 50%; background: currentColor; }
+@keyframes clock-breathe { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.25; } }
+.clock-meta { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.clock-date { font-size: clamp(15px, 2.6vmax, 22px); font-weight: 400; letter-spacing: 0.04em; color: var(--clock-soft); text-transform: lowercase; }
+.clock-seconds { width: clamp(80px, 16vmin, 140px); height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--clock-ink) 12%, transparent); overflow: hidden; }
+.clock-seconds span { display: block; height: 100%; border-radius: inherit; background: var(--clock-soft); transform-origin: left; transition: transform 1s linear; }
+.clock-seconds span.reset { transition: none; }
+.clock-close {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--clock-ink);
+  background: color-mix(in srgb, var(--clock-ink) 8%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Portrait: hours stacked over minutes, big and airy. */
+@media (orientation: portrait) {
+  .clock-time { flex-direction: column; font-size: min(46vw, 34vh); line-height: 0.88; }
+  .clock-colon { flex-direction: row; gap: 0.16em; margin: 0.06em 0 0.1em; }
+  .clock-face { gap: 6vmin; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clock-glow span, .clock-face, .clock-colon { animation: none; }
+}
+.clock-btn { color: var(--muted); }

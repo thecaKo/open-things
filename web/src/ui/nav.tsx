@@ -3,9 +3,10 @@ import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { LISTS, counts, search, listOf, type Ctx, type ListKind, type View } from '../model';
 import { getSyncState, subscribeSync, LOCAL_ONLY } from '../sync';
+import { isNative } from '../update';
 import type { Task } from '../db';
 import {
-  InboxIcon, StarIcon, CalendarIcon, AnytimeIcon, SomedayIcon, LogbookIcon, TrashIcon, AreaIcon, SearchIcon, GearIcon, PlusIcon, CloseIcon,
+  InboxIcon, StarIcon, CalendarIcon, AnytimeIcon, SomedayIcon, LogbookIcon, TrashIcon, AreaIcon, SearchIcon, GearIcon, PlusIcon, CloseIcon, ClockIcon,
 } from './icons';
 import { ProgressPie } from './rows';
 import { ThemeToggle } from './theme-controls';
@@ -20,13 +21,14 @@ export const LIST_ICON: Record<ListKind, { icon: (p: { size?: number }) => React
   trash: { icon: TrashIcon, color: 'var(--trash)' },
 };
 
-export function Navigator({ view, ctx, onOpen, onSettings, onNewList, onFound }: {
+export function Navigator({ view, ctx, onOpen, onSettings, onNewList, onFound, onClock }: {
   view: View;
   ctx: Ctx;
   onOpen: (v: View) => void;
   onSettings: () => void;
   onNewList: () => void;
   onFound: (t: Task) => void;
+  onClock: () => void;
 }) {
   const [q, setQ] = useState('');
   const c = counts(ctx);
@@ -95,6 +97,7 @@ export function Navigator({ view, ctx, onOpen, onSettings, onNewList, onFound }:
         <motion.button whileTap={{ scale: 0.95 }} className="text-btn" onClick={onNewList}><PlusIcon size={18} /> New List</motion.button>
         <span className="spacer" />
         {!LOCAL_ONLY && <SyncDot />}
+        {isNative && <motion.button whileTap={{ scale: 0.9 }} className="icon-btn clock-btn" onClick={onClock} aria-label="Clock"><ClockIcon size={20} /></motion.button>}
         <ThemeToggle />
         <motion.button whileTap={{ scale: 0.9 }} className="icon-btn" onClick={onSettings} aria-label="Settings"><GearIcon size={20} /></motion.button>
       </div>

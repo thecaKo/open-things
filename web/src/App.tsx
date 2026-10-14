@@ -13,6 +13,7 @@ import { Splash } from './ui/Splash';
 import { Navigator } from './ui/nav';
 import { ListScreen } from './ui/screen';
 import { SettingsSheet } from './ui/settings';
+import { ClockScreen } from './ui/Clock';
 import { Sheet, ActionList, Action } from './ui/Sheet';
 import { AreaIcon } from './ui/icons';
 import { ProgressPie } from './ui/rows';
@@ -64,6 +65,7 @@ function App() {
   const [dir, setDir] = useState(1);
   const [settings, setSettings] = useState(false);
   const [newList, setNewList] = useState(false);
+  const [clock, setClock] = useState(false);
   const [today, setToday] = useState(todayStr());
 
   useEffect(() => {
@@ -108,7 +110,7 @@ function App() {
   if (!tasks || !areas || !tags) return <div className="app loading" />;
 
   const nav = (
-    <Navigator view={shownView} ctx={ctx} onOpen={open} onSettings={() => setSettings(true)} onNewList={() => setNewList(true)} onFound={onFound} />
+    <Navigator view={shownView} ctx={ctx} onOpen={open} onSettings={() => setSettings(true)} onNewList={() => setNewList(true)} onFound={onFound} onClock={() => setClock(true)} />
   );
   const screen = (v: View) => (
     <ListScreen key={JSON.stringify(v)} view={v} ctx={ctx} wide={wide} onBack={back} onOpen={open} backLabel={backLabel} />
@@ -169,6 +171,7 @@ function App() {
         </ActionList>
       </Sheet>
       <UpdateBanner />
+      <AnimatePresence>{clock && <ClockScreen key="clock" onClose={() => setClock(false)} />}</AnimatePresence>
     </div>
   );
 }
