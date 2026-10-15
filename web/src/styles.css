@@ -651,10 +651,6 @@ h1, h2, p { margin: 0; }
     display: flex;
     justify-content: center;
   }
-  .pomo { --mw: min(40vw, 84vh); }
-  .pomo-main { top: 0; bottom: 0; left: 0; right: 50%; justify-content: center; }
-  .pomo .clock-time { font-size: min(14vw, 30vh); }
-  .pomo-say { left: 75%; width: 44vw; bottom: calc(var(--mw) * 0.66 + 22px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .clock-breathe { animation: none; }
@@ -662,7 +658,7 @@ h1, h2, p { margin: 0; }
 .clock-btn { color: var(--muted); }
 
 /* Pomodoro: the clock's colours; time and controls on top, the mascot below. */
-.pomo { --mw: min(70vw, 40vh); --mb: -0.3; position: absolute; inset: 0; }
+.pomo { --mw: min(100vw, 52vh); --mb: -0.3; position: absolute; inset: 0; }
 .pomo-top {
   position: absolute;
   top: max(18px, env(safe-area-inset-top));
@@ -683,7 +679,7 @@ h1, h2, p { margin: 0; }
   gap: 2.4vh;
   padding: 0 16px;
 }
-.pomo .clock-time { font-size: min(24vw, 15vh); }
+.pomo .clock-time { font-size: min(28vw, 18vh); }
 .pomo-label { font-size: clamp(15px, 2.8vmin, 24px); font-weight: 700; letter-spacing: 0.02em; color: var(--clock-soft); text-align: center; }
 .pomo-controls { display: flex; align-items: center; gap: 22px; margin-top: 1vh; }
 .pomo-play {
@@ -700,7 +696,7 @@ h1, h2, p { margin: 0; }
 .pomo-say {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--mw) * 0.66 + 18px);
+  bottom: calc(var(--mw) * (0.95 + var(--mb)) + 18px); /* just above the mascot's head */
   width: min(80vw, 300px);
   translate: -50% 0;
   display: flex;
@@ -708,6 +704,42 @@ h1, h2, p { margin: 0; }
   pointer-events: none;
 }
 .pomo-say .clock-bubble { text-align: center; }
+
+/* Landscape: time and controls on the left half, a big mascot and its bubble on the right.
+   After the base rules above, so it wins over them. */
+@media (orientation: landscape) {
+  .pomo { --mw: min(46vw, 96vh); --mb: -0.2; }
+  .pomo-main { top: 0; bottom: 0; left: 0; right: 50%; justify-content: center; }
+  .pomo .clock-time { font-size: min(16vw, 33vh); }
+  .pomo .clock-mascot { left: 75%; }
+  .pomo-say { left: 75%; width: 44vw; }
+}
+
+/* Five quick taps: the mascot gets cross and slaps the screen. */
+.clock-svg.angry .clock-blush { fill: #ff3b3b; opacity: 0.9; }
+.slap { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.slap-flash { position: absolute; inset: 0; background: #fff; }
+.slap-hand {
+  --hw: min(52vmin, 320px);
+  position: absolute;
+  left: calc(50% - var(--hw) / 2);
+  top: calc(50% - var(--hw) * 0.6);
+  width: var(--hw);
+  overflow: visible;
+}
+.slap-hand path, .slap-hand rect { fill: #fff; stroke: var(--clock-line); stroke-width: 4.5; stroke-linejoin: round; }
+.slap-hand .slap-finger { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.slap-pow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  font-size: min(22vmin, 140px);
+  font-weight: 900;
+  color: var(--clock-heart);
+  -webkit-text-stroke: 3px var(--clock-line);
+  paint-order: stroke fill;
+}
 
 /* Settings: a list of steppers and a switch, in the clock's colours. */
 .pomo-settings {

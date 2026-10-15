@@ -5,7 +5,8 @@
 // Tap to show the close button; back closes it. In landscape a speech bubble
 // above the mascot cycles through today's to-dos. The pomodoro icon (top right)
 // opens a focus/break timer on the same screen: the mascot is happy when a focus
-// ends and sleeps during breaks.
+// ends and sleeps during breaks; tap it five times in a row there and it gets
+// cross and slaps the screen.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, stagger, useAnimate, useReducedMotion } from 'motion/react';
 import { SystemBars } from '@capacitor/core';
@@ -135,19 +136,21 @@ function TodoLine({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
-type Mood = 'open' | 'happy' | 'sleep';
+type Mood = 'open' | 'happy' | 'sleep' | 'angry';
 
 /** The mascot peeking up from the bottom edge, with a little idle life. */
-function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minute: number; celebrating?: boolean }) {
+function Mascot({ asleep, minute, celebrating = false, onSlap }: { asleep: boolean; minute: number; celebrating?: boolean; onSlap?: () => void }) {
   const [scope, animate] = useAnimate();
   const reduce = useReducedMotion();
   const [happy, setHappy] = useState(false);
-  const mood: Mood = happy || celebrating ? 'happy' : asleep ? 'sleep' : 'open';
+  const [angry, setAngry] = useState(false);
+  const mood: Mood = angry ? 'angry' : happy || celebrating ? 'happy' : asleep ? 'sleep' : 'open';
   const moodRef = useRef(mood);
   moodRef.current = mood;
   const busy = useRef(false);
   const happyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const turned = useRef(false);
+  const taps = useRef({ n: 0, at: 0 });
 
   const run = async (fn: () => unknown) => {
     busy.current = true;
@@ -172,6 +175,28 @@ function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minu
     if (reduce) return;
     void heart();
     void squish();
+  };
+
+  // Fifth quick tap in a row: frown, wind up and slap (the parent draws the hand).
+  const rage = () => {
+    setHappy(false);
+    setAngry(true);
+    clearTimeout(happyTimer.current);
+    happyTimer.current = setTimeout(() => setAngry(false), 2600);
+    if (reduce) return onSlap?.();
+    void run(async () => {
+      await animate('.clock-body', { rotate: 9, x: 6 }, { duration: 0.22, ease: 'easeOut' });
+      onSlap?.();
+      await animate('.clock-body', { rotate: [9, -14, 0], x: [6, -10, 0], scale: [1, 1.12, 1] }, { duration: 0.5, ease: 'easeOut' });
+    });
+  };
+
+  const tap = () => {
+    const t = Date.now();
+    const n = t - taps.current.at < 700 ? taps.current.n + 1 : 1;
+    taps.current = { n: n >= 5 ? 0 : n, at: t };
+    if (onSlap && n >= 5) rage();
+    else if (!angry) cheer();
   };
 
   // Idle loop: a blink every few seconds, glances, and a bigger moment every 20-40s.
@@ -235,10 +260,10 @@ function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minu
       initial={{ y: '45%' }}
       animate={{ y: 0 }}
       transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.25 }}
-      onClick={(e) => { e.stopPropagation(); cheer(); }}
+      onClick={(e) => { e.stopPropagation(); tap(); }}
     >
       <div className={asleep ? 'clock-breathe sleep' : 'clock-breathe'}>
-        <svg ref={scope} className="clock-svg" viewBox="0 0 120 120" role="img" aria-label="Open Things mascot">
+        <svg ref={scope} className={'clock-svg' + (angry ? ' angry' : '')} viewBox="0 0 120 120" role="img" aria-label="Open Things mascot">
           <g className="clock-body">
             <rect className="clock-shape" x="8" y="8" width="104" height="140" rx="34" />
             <g className="clock-eyes">
@@ -254,6 +279,14 @@ function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minu
                   <path className="clock-line" d="M69 56 Q76 63 83 56" />
                 </>
               )}
+              {mood === 'angry' && (
+                <>
+                  <path className="clock-line" d="M32 40 L52 48" />
+                  <path className="clock-line" d="M88 40 L68 48" />
+                  <ellipse className="clock-eye" cx="44" cy="58" rx="6" ry="7" />
+                  <ellipse className="clock-eye" cx="76" cy="58" rx="6" ry="7" />
+                </>
+              )}
               {mood === 'happy' && (
                 <>
                   <path className="clock-line" d="M37 58 Q44 46 51 58" />
@@ -263,7 +296,7 @@ function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minu
             </g>
             <ellipse className="clock-blush" cx="30" cy="74" rx="7" ry="4.5" />
             <ellipse className="clock-blush" cx="90" cy="74" rx="7" ry="4.5" />
-            <path className="clock-mouth" d="M56 74 Q60 79 64 74" />
+            <path className="clock-mouth" d={angry ? 'M54 80 Q60 73 66 80' : 'M56 74 Q60 79 64 74'} />
           </g>
           <g transform="translate(100 10)"><g className="clock-heart"><path d={HEART} /></g></g>
           {asleep && ZS.map(([x, y, s], i) => (
@@ -285,11 +318,45 @@ function useTicker(ms: number) {
   return now;
 }
 
+const SLAP_MS = 1100;
+const HIT = 0.2; // share of SLAP_MS when the hand lands
+
+/** A big mitten swooping in from the mascot's side, a flash, a "PÁ!" and off it goes. */
+function Slap() {
+  const ease = { duration: SLAP_MS / 1000, times: [0, HIT, 0.55, 1] };
+  return (
+    <div className="slap" aria-hidden>
+      <motion.div className="slap-flash" initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 0.75, 0] }} transition={{ duration: 0.8, times: [0, 0.27, 0.31, 1] }} />
+      <motion.svg
+        className="slap-hand"
+        viewBox="0 0 100 120"
+        initial={{ opacity: 0 }}
+        animate={{ x: ['55vw', '0vw', '1vw', '-75vw'], y: ['35vh', '0vh', '2vh', '12vh'], rotate: [55, -12, -6, -45], scale: [0.5, 1.5, 1.4, 1], opacity: [1, 1, 1, 0] }}
+        transition={{ ...ease, ease: ['easeIn', 'easeOut', 'easeIn'] }}
+      >
+        <rect x="-2" y="52" width="40" height="24" rx="12" transform="rotate(-35 18 64)" />
+        <rect x="22" y="12" width="64" height="94" rx="32" />
+        <path className="slap-finger" d="M42 14 V34 M56 12 V34 M70 14 V34" />
+      </motion.svg>
+      <motion.div
+        className="slap-pow"
+        initial={{ opacity: 0, scale: 0.4 }}
+        animate={{ opacity: [0, 0, 1, 1, 0], scale: [0.4, 0.4, 1.25, 1, 0.9] }}
+        transition={{ duration: 0.9, times: [0, 0.24, 0.32, 0.7, 1] }}
+      >
+        PÁ!
+      </motion.div>
+    </div>
+  );
+}
+
 /** Focus / break timer in the clock's style: time and controls on top, the mascot below. */
 function PomodoroView({ onBack }: { onBack: () => void }) {
   const timer = useSyncExternalStore(pomo.subscribe, pomo.getTimer);
   const settings = useSyncExternalStore(pomo.subscribe, pomo.getSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [slapAt, setSlapAt] = useState(0);
+  const [root, animateRoot] = useAnimate<HTMLDivElement>();
   const now = useTicker(250);
   const closeOrBack = () => (settingsOpen ? setSettingsOpen(false) : onBack());
   useBack(true, closeOrBack);
@@ -307,7 +374,22 @@ function PomodoroView({ onBack }: { onBack: () => void }) {
   const cycles = settings.cyclesBeforeLong;
   const inCycle = breaking ? ((timer.sessions - 1) % cycles) + 1 : (timer.sessions % cycles) + 1;
   const label = breaking ? (timer.long ? 'Long break' : 'Break') : 'Focus';
-  const say = celebrating
+  const slapping = now < slapAt + SLAP_MS;
+  const scolding = now < slapAt + 2600;
+  const slap = () => {
+    setSlapAt(Date.now());
+    setTimeout(() => {
+      try {
+        navigator.vibrate?.(120);
+      } catch {
+        // No vibration here; the shake says enough.
+      }
+      void animateRoot(root.current, { x: [0, -16, 13, -8, 4, 0], y: [0, 6, -4, 2, 0] }, { duration: 0.45, ease: 'easeOut' });
+    }, SLAP_MS * HIT);
+  };
+  const say = scolding
+    ? 'Mais focus!'
+    : celebrating
     ? 'Great focus! Time for a break!'
     : breaking
       ? running ? 'Shh… resting' : timer.status === 'paused' ? 'Still resting…' : 'Zzz… break time'
@@ -315,6 +397,7 @@ function PomodoroView({ onBack }: { onBack: () => void }) {
 
   return (
     <motion.div
+      ref={root}
       className="pomo"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -364,7 +447,8 @@ function PomodoroView({ onBack }: { onBack: () => void }) {
         </motion.div>
       </AnimatePresence>
 
-      <Mascot asleep={breaking && !celebrating} minute={0} celebrating={celebrating} />
+      <Mascot asleep={breaking && !celebrating} minute={0} celebrating={celebrating} onSlap={slap} />
+      {slapping && <Slap key={slapAt} />}
 
       <AnimatePresence>
         {settingsOpen && (
