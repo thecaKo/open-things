@@ -83,3 +83,8 @@ export const HeadingIcon = svg(<path d="M4 7h16M4 12h10" />);
 export const SunIcon = svg(<><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" /></>);
 export const MoonLineIcon = svg(<path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z" />);
 export const AutoThemeIcon = svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>);
+export const TomatoIcon = svg(<><path d="M12 7.6c-4.6 0-8 2.8-8 6.4 0 3.3 3.4 5.6 8 5.6s8-2.3 8-5.6c0-3.6-3.4-6.4-8-6.4Z" /><path d="M12 7.6V4.5M12 5.4c1.6-1.6 3.4-1.8 4.8-.9M12 5.4C10.4 3.8 8.6 3.6 7.2 4.5" /></>);
+export const PlayIcon = svg(<path d="M7.5 4.9v14.2a1 1 0 0 0 1.5.9l11.2-7.1a1 1 0 0 0 0-1.7L9 4a1 1 0 0 0-1.5.9Z" />, true);
+export const PauseIcon = svg(<><rect x="6" y="4.5" width="4.2" height="15" rx="1.4" /><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4" /></>, true);
+export const ResetIcon = svg(<><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4.5V9h4.5" /></>);
+export const SkipIcon = svg(<><path d="M4.5 5.5 12 12l-7.5 6.5" /><path d="M13.5 5.5 21 12l-7.5 6.5" /></>);

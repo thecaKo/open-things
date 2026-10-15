@@ -577,14 +577,21 @@ h1, h2, p { margin: 0; }
 .clock-heart path { fill: var(--clock-heart); }
 .clock-z { font-family: inherit; font-weight: 800; fill: var(--clock-ink); }
 
-.clock-close {
+/* Top right: close (on tap) and the pomodoro icon. */
+.clock-tools {
   position: absolute;
   top: max(18px, env(safe-area-inset-top));
   right: max(18px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.clock-round {
   display: grid;
   place-items: center;
   width: 44px;
   height: 44px;
+  flex-shrink: 0;
   border-radius: 50%;
   color: var(--clock-ink);
   background: color-mix(in srgb, var(--clock-ink) 10%, transparent);
@@ -644,8 +651,104 @@ h1, h2, p { margin: 0; }
     display: flex;
     justify-content: center;
   }
+  .pomo { --mw: min(40vw, 84vh); }
+  .pomo-main { top: 0; bottom: 0; left: 0; right: 50%; justify-content: center; }
+  .pomo .clock-time { font-size: min(14vw, 30vh); }
+  .pomo-say { left: 75%; width: 44vw; bottom: calc(var(--mw) * 0.66 + 22px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .clock-breathe { animation: none; }
 }
 .clock-btn { color: var(--muted); }
+
+/* Pomodoro: the clock's colours; time and controls on top, the mascot below. */
+.pomo { --mw: min(70vw, 40vh); --mb: -0.3; position: absolute; inset: 0; }
+.pomo-top {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  right: max(18px, env(safe-area-inset-right));
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+}
+.pomo-main {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12vh);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.4vh;
+  padding: 0 16px;
+}
+.pomo .clock-time { font-size: min(24vw, 15vh); }
+.pomo-label { font-size: clamp(15px, 2.8vmin, 24px); font-weight: 700; letter-spacing: 0.02em; color: var(--clock-soft); text-align: center; }
+.pomo-controls { display: flex; align-items: center; gap: 22px; margin-top: 1vh; }
+.pomo-play {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  padding-left: 4px;
+  background: #fff;
+  color: #141416;
+  border: 3px solid var(--clock-line);
+}
+.pomo-say {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mw) * 0.66 + 18px);
+  width: min(80vw, 300px);
+  translate: -50% 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.pomo-say .clock-bubble { text-align: center; }
+
+/* Settings: a list of steppers and a switch, in the clock's colours. */
+.pomo-settings {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 74px) 18px 24px;
+  background: var(--clock-bg);
+}
+.pomo-rows { max-width: 520px; margin: 0 auto; }
+.pomo-title { font-size: 26px; font-weight: 800; margin: 0 4px 14px; }
+.pomo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 62px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--clock-ink) 8%, transparent);
+  font-size: 16px;
+  font-weight: 700;
+}
+.pomo-row > span:first-child { min-width: 0; }
+.pomo-step { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pomo-step button {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--clock-ink) 12%, transparent);
+  color: var(--clock-ink);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+}
+.pomo-step button:disabled { opacity: 0.3; }
+.pomo-step b { min-width: 72px; text-align: center; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pomo-step small { font-size: 13px; font-weight: 700; color: var(--clock-soft); }
+.pomo-toggle { position: relative; flex-shrink: 0; width: 54px; height: 32px; border-radius: 16px; background: color-mix(in srgb, var(--clock-ink) 20%, transparent); transition: background 0.2s; }
+.pomo-toggle span { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; transition: translate 0.2s; }
+.pomo-toggle.on { background: var(--clock-heart); }
+.pomo-toggle.on span { translate: 22px 0; }

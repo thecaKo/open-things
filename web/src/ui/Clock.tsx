@@ -3,13 +3,16 @@
 // around, breathes, hops each minute, sleeps at night and reacts to taps. The
 // screen stays on while it is open (Wake Lock) and the system bars are hidden.
 // Tap to show the close button; back closes it. In landscape a speech bubble
-// above the mascot cycles through today's to-dos.
-import { useEffect, useRef, useState } from 'react';
+// above the mascot cycles through today's to-dos. The pomodoro icon (top right)
+// opens a focus/break timer on the same screen: the mascot is happy when a focus
+// ends and sleeps during breaks.
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, stagger, useAnimate, useReducedMotion } from 'motion/react';
 import { SystemBars } from '@capacitor/core';
 import { isNative } from '../update';
 import { useBack } from './back';
-import { CloseIcon } from './icons';
+import { CloseIcon, GearIcon, ChevronLeft, PauseIcon, PlayIcon, ResetIcon, SkipIcon, TomatoIcon } from './icons';
+import * as pomo from './pomodoro';
 
 const HOUR12 = ['h11', 'h12'].includes(new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hourCycle ?? '');
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -135,11 +138,11 @@ function TodoLine({ text, onDone }: { text: string; onDone: () => void }) {
 type Mood = 'open' | 'happy' | 'sleep';
 
 /** The mascot peeking up from the bottom edge, with a little idle life. */
-function Mascot({ asleep, minute }: { asleep: boolean; minute: number }) {
+function Mascot({ asleep, minute, celebrating = false }: { asleep: boolean; minute: number; celebrating?: boolean }) {
   const [scope, animate] = useAnimate();
   const reduce = useReducedMotion();
   const [happy, setHappy] = useState(false);
-  const mood: Mood = happy ? 'happy' : asleep ? 'sleep' : 'open';
+  const mood: Mood = happy || celebrating ? 'happy' : asleep ? 'sleep' : 'open';
   const moodRef = useRef(mood);
   moodRef.current = mood;
   const busy = useRef(false);
@@ -195,6 +198,19 @@ function Mascot({ asleep, minute }: { asleep: boolean; minute: number }) {
     })();
     return () => { alive = false; };
   }, [reduce]);
+
+  // Celebrating (a focus just ended): keep hopping with a heart every beat.
+  useEffect(() => {
+    if (!celebrating || reduce) return;
+    let alive = true;
+    void (async () => {
+      while (alive) {
+        await run(async () => { void heart(); await hop(); });
+        await wait(1100);
+      }
+    })();
+    return () => { alive = false; };
+  }, [celebrating, reduce]);
 
   // A little hop and an upward glance each time the minute turns.
   useEffect(() => {
@@ -259,9 +275,141 @@ function Mascot({ asleep, minute }: { asleep: boolean; minute: number }) {
   );
 }
 
+/** Re-renders every `ms`, so the pomodoro countdown and its phase changes show on time. */
+function useTicker(ms: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+  return now;
+}
+
+/** Focus / break timer in the clock's style: time and controls on top, the mascot below. */
+function PomodoroView({ onBack }: { onBack: () => void }) {
+  const timer = useSyncExternalStore(pomo.subscribe, pomo.getTimer);
+  const settings = useSyncExternalStore(pomo.subscribe, pomo.getSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const now = useTicker(250);
+  const closeOrBack = () => (settingsOpen ? setSettingsOpen(false) : onBack());
+  useBack(true, closeOrBack);
+
+  useEffect(() => {
+    pomo.tick();
+  }, [now]);
+
+  const running = timer.status === 'running';
+  const celebrating = now < timer.celebrateUntil;
+  const breaking = timer.phase === 'break';
+  const left = Math.ceil(pomo.remainingMs(timer, settings, now) / 1000);
+  const mm = pad(Math.floor(left / 60));
+  const ss = pad(left % 60);
+  const cycles = settings.cyclesBeforeLong;
+  const inCycle = breaking ? ((timer.sessions - 1) % cycles) + 1 : (timer.sessions % cycles) + 1;
+  const label = breaking ? (timer.long ? 'Long break' : 'Break') : 'Focus';
+  const say = celebrating
+    ? 'Great focus! Time for a break!'
+    : breaking
+      ? running ? 'Shh… resting' : timer.status === 'paused' ? 'Still resting…' : 'Zzz… break time'
+      : running ? 'Focus, you got this!' : timer.status === 'paused' ? 'Paused, no rush.' : 'Ready when you are.';
+
+  return (
+    <motion.div
+      className="pomo"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="pomo-top">
+        <motion.button whileTap={{ scale: 0.9 }} className="clock-round" aria-label="Back" onClick={closeOrBack}>
+          <ChevronLeft size={22} />
+        </motion.button>
+        <motion.button whileTap={{ scale: 0.9 }} className="clock-round" aria-label="Pomodoro settings" onClick={() => setSettingsOpen((o) => !o)}>
+          <GearIcon size={20} />
+        </motion.button>
+      </div>
+
+      <div className="pomo-main">
+        <div className="pomo-label">{label} · {inCycle} of {cycles}</div>
+        <div className="clock-time" role="timer" aria-label={`${mm}:${ss} left`}>
+          <Pair v={mm} />
+          <span className="clock-colon" aria-hidden><i /><i /></span>
+          <Pair v={ss} />
+        </div>
+        <div className="pomo-controls">
+          <motion.button whileTap={{ scale: 0.9 }} className="clock-round" aria-label="Reset" onClick={pomo.reset}>
+            <ResetIcon size={22} />
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.92 }} className="pomo-play" aria-label={running ? 'Pause' : breaking ? 'Start break' : 'Start focus'} onClick={() => (running ? pomo.pause() : pomo.start())}>
+            {running ? <PauseIcon size={30} /> : <PlayIcon size={30} />}
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.9 }} className="clock-round" aria-label="Skip" onClick={pomo.skip}>
+            <SkipIcon size={22} />
+          </motion.button>
+        </div>
+      </div>
+
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={say}
+          className="pomo-say"
+          initial={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, y: -6, filter: 'blur(6px)' }}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="clock-bubble">{say}</div>
+        </motion.div>
+      </AnimatePresence>
+
+      <Mascot asleep={breaking && !celebrating} minute={0} celebrating={celebrating} />
+
+      <AnimatePresence>
+        {settingsOpen && (
+          <motion.div
+            className="pomo-settings"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <div className="pomo-rows">
+              <div className="pomo-title">Pomodoro</div>
+              {pomo.FIELDS.map((f) => (
+                <div className="pomo-row" key={f.key}>
+                  <span>{f.label}</span>
+                  <span className="pomo-step">
+                    <button aria-label={`Less ${f.label}`} disabled={settings[f.key] <= f.min} onClick={() => pomo.bump(f.key, -1)}>−</button>
+                    <b>{settings[f.key]}{f.unit && <small> {f.unit}</small>}</b>
+                    <button aria-label={`More ${f.label}`} disabled={settings[f.key] >= f.max} onClick={() => pomo.bump(f.key, 1)}>+</button>
+                  </span>
+                </div>
+              ))}
+              <div className="pomo-row">
+                <span>Start breaks automatically</span>
+                <button
+                  role="switch"
+                  aria-checked={settings.autoStartBreak}
+                  className={'pomo-toggle' + (settings.autoStartBreak ? ' on' : '')}
+                  onClick={pomo.toggleAutoStart}
+                >
+                  <span />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export function ClockScreen({ todos, onClose }: { todos: string[]; onClose: () => void }) {
   const now = useNow();
   const [chrome, setChrome] = useState(false);
+  const [pomodoro, setPomodoro] = useState(false);
   useBack(true, onClose);
   useWakeLock();
 
@@ -294,38 +442,55 @@ export function ClockScreen({ todos, onClose }: { todos: string[]; onClose: () =
       transition={{ duration: 0.5, ease: 'easeOut' }}
       onClick={() => setChrome((c) => !c)}
     >
-      <motion.div
-        className="clock-face"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-      >
-        <div className="clock-time" role="timer" aria-label={`${hours}:${minutes}`}>
-          <Pair v={hours} />
-          <span className="clock-colon" aria-hidden><i /><i /></span>
-          <Pair v={minutes} />
-        </div>
-        <div className="clock-date">{date}{meridiem && <> · {meridiem}</>}</div>
-      </motion.div>
-
-      <Mascot asleep={asleep} minute={now.getMinutes()} />
-      <TodoBubble items={todos} />
-
-      <AnimatePresence>
-        {chrome && (
-          <motion.button
-            className="clock-close"
-            aria-label="Close clock"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={(e) => { e.stopPropagation(); onClose(); }}
+      {pomodoro ? (
+        <PomodoroView onBack={() => setPomodoro(false)} />
+      ) : (
+        <>
+          <motion.div
+            className="clock-face"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
           >
-            <CloseIcon size={20} />
-          </motion.button>
-        )}
-      </AnimatePresence>
+            <div className="clock-time" role="timer" aria-label={`${hours}:${minutes}`}>
+              <Pair v={hours} />
+              <span className="clock-colon" aria-hidden><i /><i /></span>
+              <Pair v={minutes} />
+            </div>
+            <div className="clock-date">{date}{meridiem && <> · {meridiem}</>}</div>
+          </motion.div>
+
+          <Mascot asleep={asleep} minute={now.getMinutes()} />
+          <TodoBubble items={todos} />
+
+          <div className="clock-tools">
+            <AnimatePresence>
+              {chrome && (
+                <motion.button
+                  key="close"
+                  className="clock-round"
+                  aria-label="Close clock"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => { e.stopPropagation(); onClose(); }}
+                >
+                  <CloseIcon size={20} />
+                </motion.button>
+              )}
+            </AnimatePresence>
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              className="clock-round"
+              aria-label="Pomodoro"
+              onClick={(e) => { e.stopPropagation(); setPomodoro(true); }}
+            >
+              <TomatoIcon size={22} />
+            </motion.button>
+          </div>
+        </>
+      )}
     </motion.div>
   );
 }
